@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -146,7 +147,24 @@ export default function IntakePage() {
             )}
           </div>
 
-          <p className="text-xs text-zinc-500">{result.disclaimer}</p>
+          <p className="text-xs text-zinc-500 mb-4">{result.disclaimer}</p>
+
+          <Link
+            href={{
+              pathname: "/book",
+              query: {
+                service_name: result.service_name ?? "",
+                probable_issue: result.probable_issue,
+                urgency: result.urgency,
+                estimate_min: result.estimate_min ?? "",
+                estimate_max: result.estimate_max ?? "",
+                issue_description: messages.find((m) => m.role === "user")?.content ?? "",
+              },
+            }}
+            className="inline-block bg-black text-white rounded px-4 py-2 text-sm"
+          >
+            Book this repair
+          </Link>
         </div>
       )}
     </div>

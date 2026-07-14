@@ -43,6 +43,15 @@ export default function RootLayout({
           <Link href="/jobs" className="text-sm hover:underline">
             Jobs
           </Link>
+          <Link href="/book" className="text-sm hover:underline">
+            Book
+          </Link>
+          <Link href="/track" className="text-sm hover:underline">
+            Track
+          </Link>
+          <Link href="/admin" className="text-sm hover:underline">
+            Admin
+          </Link>
         </nav>
         <main className="flex-1">{children}</main>
       </body>

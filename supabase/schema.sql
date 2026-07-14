@@ -57,3 +57,6 @@ create policy "public read autoshop_jobs" on autoshop_jobs for select using (tru
 
 drop policy if exists "public read autoshop_status_history" on autoshop_status_history;
 create policy "public read autoshop_status_history" on autoshop_status_history for select using (true);
+
+drop policy if exists "public read sent autoshop_messages" on autoshop_messages;
+create policy "public read sent autoshop_messages" on autoshop_messages for select using (sent = true);
