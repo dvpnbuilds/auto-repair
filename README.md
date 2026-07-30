@@ -8,7 +8,7 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 ## Local setup
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply `supabase/migrations/20260730_phase6_shop_config.sql`, `supabase/migrations/20260730_phase8_email_automation.sql`, `supabase/migrations/20260730_phase9_shop_switcher.sql`, then `supabase/migrations/20260730_p0_security_hardening.sql`.
+3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply `supabase/migrations/20260730_phase6_shop_config.sql`, `supabase/migrations/20260730_phase8_email_automation.sql`, `supabase/migrations/20260730_phase9_shop_switcher.sql`, `supabase/migrations/20260730_p0_security_hardening.sql`, then `supabase/migrations/20260730_p1_integrity_hardening.sql`.
 4. `npm run seed` — restores both regional service catalogs and all ten demo jobs, with the US shop active by default. Pass `ph` or `us` to choose a different active shop.
 5. `npm run dev` — http://localhost:3000
 
@@ -42,7 +42,7 @@ The app ships English at `/en`; visiting `/` redirects there. Add a locale to `i
 
 Import both JSON files from `n8n/workflows/` and follow `n8n/README.md`. The delivery workflow accepts only the shared-secret header, renders one of the four supported templates, sends through its Resend node, and calls the app back with the final status. The reminder workflow supports both its hourly schedule and an on-demand manual trigger.
 
-All application features call `sendEmail()`. Set `EMAIL_TRANSPORT=n8n` for normal operation or change only that variable to `resend` for the direct fallback. Delivery attempts are private, idempotent, recorded in `auto_repair.autoshop_email_deliveries`, and limited by the demo send cap.
+All application features call `sendEmail()`. Set `EMAIL_TRANSPORT=n8n` for normal operation or change only that variable to `resend` for the direct fallback. Delivery attempts are private, idempotent, recorded in `auto_repair.autoshop_email_deliveries`, and limited by the demo send cap. Ambiguous provider results remain `reconciling`; the authenticated hourly reminder run safely retries them with the same provider idempotency key for up to 23 hours.
 
 Before a real send, replace each seeded `.example` `email_sender_address` in `auto_repair.autoshop_shops` with an address on the domain verified in Resend. Seeded customer `.example` addresses are never sent unless `EMAIL_DEMO_RECIPIENT` points to a safe real inbox.
 

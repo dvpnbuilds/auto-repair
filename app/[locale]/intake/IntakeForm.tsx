@@ -160,8 +160,6 @@ export default function IntakeForm({shop}: {shop: ShopConfig}) {
                 service_name: result.service_name ?? "",
                 probable_issue: result.probable_issue,
                 urgency: result.urgency,
-                estimate_min: result.estimate_min ?? "",
-                estimate_max: result.estimate_max ?? "",
                 issue_description: messages.find((message) => message.role === "user")?.content ?? "",
               },
             }}

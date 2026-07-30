@@ -2,7 +2,12 @@ import type {MessageKind} from "@/lib/openrouter/messages";
 import type {ShopConfig} from "@/lib/shop-config";
 
 export type EmailTransport = "n8n" | "resend";
-export type EmailDeliveryStatus = "pending" | "sent" | "failed" | "capped";
+export type EmailDeliveryStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "capped"
+  | "reconciling";
 export type EmailTemplateId = MessageKind;
 
 export type EmailTemplatePayload = {

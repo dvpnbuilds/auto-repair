@@ -101,6 +101,31 @@ test("n8n transport authenticates, preserves idempotency, and sends the template
   );
 });
 
+test("n8n retries preserve the exact same provider idempotency identity", async () => {
+  const capturedKeys: string[] = [];
+  let attempts = 0;
+  const fetcher: typeof fetch = async (_url, init) => {
+    attempts += 1;
+    capturedKeys.push(new Headers(init?.headers).get("Idempotency-Key") ?? "");
+    return new Response(null, {status: attempts === 1 ? 503 : 202});
+  };
+
+  await dispatchN8nEmail(
+    sampleInput,
+    "customer@example.test",
+    deliveryId,
+    {
+      webhookUrl: "https://n8n.example.test/webhook/auto-repair-email",
+      secret: "shared-test-secret",
+      appBaseUrl: "https://app.example.test",
+    },
+    fetcher
+  );
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(capturedKeys, [deliveryId, deliveryId]);
+});
+
 test("Resend fallback renders the same template and uses the delivery id as its idempotency key", async () => {
   let capturedMessage: Record<string, unknown> | undefined;
   let capturedOptions: Record<string, unknown> | undefined;
@@ -180,11 +205,12 @@ test("exported n8n workflows are importable and include delivery plus on-demand 
       (node: {type: string}) => node.type === "n8n-nodes-base.webhook"
     )
   );
-  assert.ok(
-    deliveryWorkflow.nodes.some(
-      (node: {type: string}) => node.type === "n8n-nodes-base.resend"
-    )
+  const sender = deliveryWorkflow.nodes.find(
+    (node: {name: string}) => node.name === "Send with Resend"
   );
+  assert.equal(sender.type, "n8n-nodes-base.httpRequest");
+  assert.equal(sender.parameters.url, "https://api.resend.com/emails");
+  assert.match(JSON.stringify(sender.parameters), /Idempotency-Key/);
   const renderer = deliveryWorkflow.nodes.find(
     (node: {name: string}) => node.name === "Render Email Template"
   );

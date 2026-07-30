@@ -29,8 +29,6 @@ export default async function BookPage({
     probableIssue: first(params.probable_issue) ?? "",
     issueDescription: first(params.issue_description) ?? "",
     urgency: first(params.urgency) ?? "",
-    estimateMin: first(params.estimate_min) ?? "",
-    estimateMax: first(params.estimate_max) ?? "",
   };
 
   return (

@@ -1,22 +1,32 @@
 import "server-only";
 import {Resend} from "resend";
+import {callWithRetry} from "@/lib/callWithRetry";
 import {completeEmailDelivery, reserveEmailDelivery} from "@/lib/email/deliveries";
-import {
-  dispatchN8nEmail,
-  dispatchResendEmail,
-} from "@/lib/email/transports";
+import {dispatchN8nEmail, dispatchResendEmail} from "@/lib/email/transports";
 import type {
+  EmailDelivery,
   EmailTransport,
   SendEmailInput,
   SendEmailResult,
 } from "@/lib/email/types";
 
 const DEFAULT_DEMO_SEND_CAP = 10;
+const SAFE_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+
+class EmailConfigurationError extends Error {}
+
+export type EmailReservationConfig = {
+  transport: EmailTransport;
+  recipient: string;
+  cap: number;
+};
 
 function getTransport(): EmailTransport {
   const value = process.env.EMAIL_TRANSPORT ?? "n8n";
   if (value !== "n8n" && value !== "resend") {
-    throw new Error("EMAIL_TRANSPORT must be n8n or resend");
+    throw new EmailConfigurationError(
+      "EMAIL_TRANSPORT must be n8n or resend"
+    );
   }
   return value;
 }
@@ -24,7 +34,9 @@ function getTransport(): EmailTransport {
 function getSendCap(): number {
   const parsed = Number(process.env.EMAIL_DEMO_SEND_CAP ?? DEFAULT_DEMO_SEND_CAP);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("EMAIL_DEMO_SEND_CAP must be a positive integer");
+    throw new EmailConfigurationError(
+      "EMAIL_DEMO_SEND_CAP must be a positive integer"
+    );
   }
   return parsed;
 }
@@ -32,21 +44,31 @@ function getSendCap(): number {
 function resolveRecipient(requested: string | null): string {
   const recipient = process.env.EMAIL_DEMO_RECIPIENT?.trim() || requested?.trim();
   if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
-    throw new Error("A valid customer email or EMAIL_DEMO_RECIPIENT is required");
-  }
-  if (!process.env.EMAIL_DEMO_RECIPIENT && /\.example$/i.test(recipient)) {
-    throw new Error("EMAIL_DEMO_RECIPIENT is required for seeded demo addresses");
+    throw new EmailConfigurationError(
+      "A valid customer email or EMAIL_DEMO_RECIPIENT is required"
+    );
   }
   return recipient;
 }
 
-function validateSender(address: string): void {
+function validateDispatchConfiguration(
+  input: SendEmailInput,
+  delivery: EmailDelivery
+): void {
   if (
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) ||
-    /\.example$/i.test(address)
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.shop.email_sender_address) ||
+    /\.example$/i.test(input.shop.email_sender_address)
   ) {
-    throw new Error(
+    throw new EmailConfigurationError(
       "The active shop email sender must use a verified delivery domain"
+    );
+  }
+  if (
+    !process.env.EMAIL_DEMO_RECIPIENT &&
+    /\.example$/i.test(delivery.recipient)
+  ) {
+    throw new EmailConfigurationError(
+      "EMAIL_DEMO_RECIPIENT is required for seeded demo addresses"
     );
   }
 }
@@ -56,51 +78,103 @@ function getAppBaseUrl(): string {
   if (configured) return configured.replace(/\/$/, "");
   const vercelUrl = process.env.VERCEL_URL?.trim();
   if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
-  throw new Error("APP_BASE_URL is required for the n8n transport");
+  throw new EmailConfigurationError(
+    "APP_BASE_URL is required for the n8n transport"
+  );
 }
 
 function getN8nConfig() {
   const webhookUrl = process.env.N8N_WEBHOOK_URL?.trim();
   const secret = process.env.N8N_WEBHOOK_SECRET?.trim();
   if (!webhookUrl || !secret) {
-    throw new Error("N8N_WEBHOOK_URL and N8N_WEBHOOK_SECRET are required");
+    throw new EmailConfigurationError(
+      "N8N_WEBHOOK_URL and N8N_WEBHOOK_SECRET are required"
+    );
   }
 
   return {webhookUrl, secret, appBaseUrl: getAppBaseUrl()};
 }
 
-export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
-  const transport = getTransport();
-  validateSender(input.shop.email_sender_address);
-  const recipient = resolveRecipient(input.to);
-  const {delivery, isNew} = await reserveEmailDelivery({
-    shopId: input.shop.id,
-    jobId: input.jobId,
-    messageId: input.messageId,
-    templateId: input.templateId,
-    transport,
-    recipient,
+export function prepareEmailReservation(
+  requestedRecipient: string | null
+): EmailReservationConfig {
+  return {
+    transport: getTransport(),
+    recipient: resolveRecipient(requestedRecipient),
     cap: getSendCap(),
-  });
+  };
+}
 
-  if (!isNew || delivery.status === "capped") {
+function isInsideSafeRetryWindow(delivery: EmailDelivery): boolean {
+  return Date.now() - new Date(delivery.created_at).getTime() < SAFE_RETRY_WINDOW_MS;
+}
+
+export async function sendEmail(
+  input: SendEmailInput,
+  reservedDelivery?: EmailDelivery
+): Promise<SendEmailResult> {
+  let delivery = reservedDelivery;
+  if (!delivery) {
+    const config = prepareEmailReservation(input.to);
+    const reservation = await reserveEmailDelivery({
+      shopId: input.shop.id,
+      jobId: input.jobId,
+      messageId: input.messageId,
+      templateId: input.templateId,
+      transport: config.transport,
+      recipient: config.recipient,
+      cap: config.cap,
+    });
+    delivery = reservation.delivery;
+    if (!reservation.isNew) {
+      if (
+        delivery.status !== "pending" &&
+        delivery.status !== "reconciling"
+      ) {
+        return {delivery, dispatched: false};
+      }
+    }
+  }
+
+  if (
+    delivery.status === "sent" ||
+    delivery.status === "failed" ||
+    delivery.status === "capped"
+  ) {
+    return {delivery, dispatched: false};
+  }
+  if (
+    delivery.status === "reconciling" &&
+    !isInsideSafeRetryWindow(delivery)
+  ) {
     return {delivery, dispatched: false};
   }
 
   try {
-    if (transport === "n8n") {
-      await dispatchN8nEmail(input, recipient, delivery.id, getN8nConfig());
+    validateDispatchConfiguration(input, delivery);
+
+    if (delivery.transport === "n8n") {
+      await dispatchN8nEmail(
+        input,
+        delivery.recipient,
+        delivery.id,
+        getN8nConfig()
+      );
       return {delivery, dispatched: true};
     }
 
     const apiKey = process.env.RESEND_API_KEY?.trim();
-    if (!apiKey) throw new Error("RESEND_API_KEY is required");
+    if (!apiKey) {
+      throw new EmailConfigurationError("RESEND_API_KEY is required");
+    }
     const resend = new Resend(apiKey);
-    const providerMessageId = await dispatchResendEmail(
-      input,
-      recipient,
-      delivery.id,
-      resend.emails.send.bind(resend.emails)
+    const providerMessageId = await callWithRetry(() =>
+      dispatchResendEmail(
+        input,
+        delivery.recipient,
+        delivery.id,
+        resend.emails.send.bind(resend.emails)
+      )
     );
     const completed = await completeEmailDelivery(
       delivery.id,
@@ -109,8 +183,16 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     );
     return {delivery: completed, dispatched: true};
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Email delivery failed";
-    const failed = await completeEmailDelivery(delivery.id, "failed", null, message);
-    throw Object.assign(new Error(message), {delivery: failed});
+    const message =
+      error instanceof Error ? error.message : "Email delivery failed";
+    const status =
+      error instanceof EmailConfigurationError ? "failed" : "reconciling";
+    const completed = await completeEmailDelivery(
+      delivery.id,
+      status,
+      null,
+      message
+    );
+    throw Object.assign(new Error(message), {delivery: completed});
   }
 }

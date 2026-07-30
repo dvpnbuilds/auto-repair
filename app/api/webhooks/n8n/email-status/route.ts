@@ -4,7 +4,7 @@ import {hasValidN8nSecret} from "@/lib/webhooks/auth";
 
 type StatusBody = {
   delivery_id: string;
-  status: "sent" | "failed";
+  status: "sent" | "failed" | "reconciling";
   provider_message_id?: string | null;
   error?: string | null;
 };
@@ -14,7 +14,9 @@ function isStatusBody(value: unknown): value is StatusBody {
   const body = value as Record<string, unknown>;
   return (
     typeof body.delivery_id === "string" &&
-    (body.status === "sent" || body.status === "failed") &&
+    (body.status === "sent" ||
+      body.status === "failed" ||
+      body.status === "reconciling") &&
     (body.provider_message_id === undefined ||
       body.provider_message_id === null ||
       typeof body.provider_message_id === "string") &&

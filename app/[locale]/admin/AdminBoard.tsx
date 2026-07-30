@@ -22,7 +22,7 @@ export type Message = {
   body: string;
   sent: boolean;
   created_at: string;
-  delivery_status?: "pending" | "sent" | "failed" | "capped";
+  delivery_status?: "pending" | "sent" | "failed" | "capped" | "reconciling";
 };
 
 type ShopOption = {
@@ -114,7 +114,7 @@ export default function AdminBoard({
       const res = await fetch(`/api/admin/jobs/${job.id}/status`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({status: next}),
+        body: JSON.stringify({status: next, expectedStatus: job.status}),
       });
       const data = await res.json();
       if (!res.ok) throw new Error();
@@ -312,6 +312,8 @@ export default function AdminBoard({
                                     ? t("queued")
                                     : message.delivery_status === "failed"
                                       ? t("failed")
+                                      : message.delivery_status === "reconciling"
+                                        ? t("reconciling")
                                       : message.delivery_status === "capped"
                                         ? t("capped")
                                         : t("draft"),

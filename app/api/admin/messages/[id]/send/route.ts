@@ -2,6 +2,7 @@ import {NextResponse} from "next/server";
 import {isAdminAuthedFromHeader} from "@/lib/admin/auth";
 import {createEmailPayload} from "@/lib/email/payload";
 import {sendEmail} from "@/lib/email/send";
+import type {EmailDelivery} from "@/lib/email/types";
 import {getActiveShop} from "@/lib/shop-config";
 import {supabaseService} from "@/lib/supabase/server";
 
@@ -71,7 +72,23 @@ export async function POST(
       email,
     });
   } catch (err) {
-    console.error("Email delivery failed:", err);
-    return NextResponse.json({error: "Email delivery failed"}, {status: 502});
+    console.error("Email delivery moved to a durable recovery state:", err);
+    const delivery =
+      err && typeof err === "object" && "delivery" in err
+        ? (err.delivery as EmailDelivery)
+        : null;
+    const {data: updatedMessage} = await supabaseService
+      .from("autoshop_messages")
+      .select("*")
+      .eq("id", id)
+      .single();
+    return NextResponse.json(
+      {
+        message: updatedMessage ?? message,
+        email: delivery ? {delivery, dispatched: false} : null,
+        emailError: true,
+      },
+      {status: 202}
+    );
   }
 }

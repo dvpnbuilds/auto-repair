@@ -1,5 +1,6 @@
 import {NextResponse} from "next/server";
 import {createEmailPayload} from "@/lib/email/payload";
+import {reconcileEmailDeliveries} from "@/lib/email/reconcile";
 import {sendEmail} from "@/lib/email/send";
 import {draftMessage} from "@/lib/openrouter/messages";
 import {getActiveShop} from "@/lib/shop-config";
@@ -11,6 +12,12 @@ export async function POST(request: Request) {
     return NextResponse.json({error: "Unauthorized"}, {status: 401});
   }
 
+  let reconciled: Awaited<ReturnType<typeof reconcileEmailDeliveries>> = [];
+  try {
+    reconciled = await reconcileEmailDeliveries();
+  } catch (error) {
+    console.error("Email reconciliation failed:", error);
+  }
   const shop = await getActiveShop(supabaseService);
   const now = new Date();
   const reminderWindowEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -76,6 +83,7 @@ export async function POST(request: Request) {
     ok: true,
     due: jobs?.length ?? 0,
     processed: results.length,
+    reconciled,
     results,
   });
 }

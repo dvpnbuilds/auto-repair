@@ -45,7 +45,7 @@ export async function reserveEmailDelivery(
 
 export async function completeEmailDelivery(
   deliveryId: string,
-  status: Extract<EmailDeliveryStatus, "sent" | "failed">,
+  status: Extract<EmailDeliveryStatus, "sent" | "failed" | "reconciling">,
   providerMessageId?: string | null,
   errorMessage?: string | null
 ): Promise<EmailDelivery> {

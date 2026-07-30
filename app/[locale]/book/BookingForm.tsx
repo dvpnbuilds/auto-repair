@@ -3,7 +3,7 @@
 import {useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
-import {formatCurrency, getShopToday, shopLocalDateTimeToIso} from "@/lib/formatting";
+import {formatCurrency, getShopToday} from "@/lib/formatting";
 import type {ShopConfig} from "@/lib/shop-config";
 
 type Service = {
@@ -20,8 +20,6 @@ type Prefill = {
   probableIssue: string;
   issueDescription: string;
   urgency: string;
-  estimateMin: string;
-  estimateMax: string;
 };
 
 const TIME_SLOTS = ["09:00", "11:00", "13:00", "15:00", "17:00"];
@@ -53,6 +51,7 @@ export default function BookingForm({
   const [error, setError] = useState<string | null>(null);
 
   const today = getShopToday(shop);
+  const selectedService = services.find((service) => service.id === serviceId);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -76,6 +75,7 @@ export default function BookingForm({
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
+          shop_id: shop.id,
           customer_name: customerName,
           plate_number: plateNumber,
           phone,
@@ -85,9 +85,8 @@ export default function BookingForm({
           issue_description: issueDescription || null,
           probable_issue: prefill.probableIssue || null,
           urgency: prefill.urgency || null,
-          estimate_min: prefill.estimateMin ? Number(prefill.estimateMin) : null,
-          estimate_max: prefill.estimateMax ? Number(prefill.estimateMax) : null,
-          scheduled_at: shopLocalDateTimeToIso(date, time, shop),
+          scheduled_date: date,
+          scheduled_time: time,
         }),
       });
 
@@ -106,10 +105,10 @@ export default function BookingForm({
       {prefill.probableIssue && (
         <div className="border border-black/10 rounded p-4 text-sm bg-zinc-50">
           <div className="font-medium mb-1">{prefill.probableIssue}</div>
-          {prefill.estimateMin && prefill.estimateMax && (
+          {selectedService && (
             <div className="text-zinc-600">
-              {formatCurrency(Number(prefill.estimateMin), shop)}–
-              {formatCurrency(Number(prefill.estimateMax), shop)} (
+              {formatCurrency(selectedService.price_min, shop)}–
+              {formatCurrency(selectedService.price_max, shop)} (
               {common("initialEstimateDisclaimer")})
             </div>
           )}

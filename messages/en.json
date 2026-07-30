@@ -136,6 +136,7 @@
     "draft": "draft",
     "queued": "queued",
     "failed": "failed",
+    "reconciling": "delivery being reconciled",
     "capped": "send cap reached",
     "sending": "Sending…",
     "send": "Send"

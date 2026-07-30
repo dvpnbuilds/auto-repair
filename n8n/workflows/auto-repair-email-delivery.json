@@ -24,7 +24,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const request = $json.body ?? $json;\nconst payload = request.payload;\nconst subjects = {\n  status_update: `${payload.shopName}: repair status update`,\n  completion_report: `${payload.shopName}: your repair is complete`,\n  reminder: `${payload.shopName}: appointment reminder`,\n  review_request: `${payload.shopName}: how did we do?`\n};\nif (!subjects[request.template_id]) throw new Error('Unsupported email template');\nconst escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\"', '&quot;').replaceAll(\"'\", '&#039;');\nconst details = [\n  `<strong>Vehicle:</strong> ${escapeHtml(payload.vehicle)}`,\n  payload.status ? `<strong>Status:</strong> ${escapeHtml(payload.status)}` : null,\n  payload.scheduledAt ? `<strong>Appointment:</strong> ${escapeHtml(payload.scheduledAt)}` : null\n].filter(Boolean).join('<br>');\nreturn [{json: {\n  ...request,\n  callback_secret: $json.headers?.['x-autoshop-webhook-secret'],\n  subject: subjects[request.template_id],\n  html: `<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#18181b;max-width:560px\"><p>Hi ${escapeHtml(payload.customerName)},</p><p>${escapeHtml(payload.messageBody)}</p><p>${details}</p><p style=\"color:#71717a;font-size:13px\">${escapeHtml(payload.shopName)}<br>${escapeHtml(payload.shopAddress)}</p></div>`\n}}];"
+        "jsCode": "const request = $json.body ?? $json;\nconst payload = request.payload;\nconst idempotencyKey = $json.headers?.['idempotency-key'];\nif (!request.delivery_id || idempotencyKey !== request.delivery_id) throw new Error('Delivery idempotency key mismatch');\nconst subjects = {\n  status_update: `${payload.shopName}: repair status update`,\n  completion_report: `${payload.shopName}: your repair is complete`,\n  reminder: `${payload.shopName}: appointment reminder`,\n  review_request: `${payload.shopName}: how did we do?`\n};\nif (!subjects[request.template_id]) throw new Error('Unsupported email template');\nconst escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\"', '&quot;').replaceAll(\"'\", '&#039;');\nconst details = [\n  `<strong>Vehicle:</strong> ${escapeHtml(payload.vehicle)}`,\n  payload.status ? `<strong>Status:</strong> ${escapeHtml(payload.status)}` : null,\n  payload.scheduledAt ? `<strong>Appointment:</strong> ${escapeHtml(payload.scheduledAt)}` : null\n].filter(Boolean).join('<br>');\nreturn [{json: {\n  ...request,\n  idempotency_key: idempotencyKey,\n  callback_secret: $json.headers?.['x-autoshop-webhook-secret'],\n  subject: subjects[request.template_id],\n  html: `<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#18181b;max-width:560px\"><p>Hi ${escapeHtml(payload.customerName)},</p><p>${escapeHtml(payload.messageBody)}</p><p>${details}</p><p style=\"color:#71717a;font-size:13px\">${escapeHtml(payload.shopName)}<br>${escapeHtml(payload.shopAddress)}</p></div>`\n}}];"
       },
       "id": "2",
       "name": "Render Email Template",
@@ -34,23 +34,34 @@
     },
     {
       "parameters": {
-        "fromEmail": "={{ $json.from_name + ' <' + $json.from_email + '>' }}",
-        "toEmail": "={{ $json.to }}",
-        "subject": "={{ $json.subject }}",
-        "emailType": "html",
-        "html": "={{ $json.html }}",
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { from: $json.from_name + ' <' + $json.from_email + '>', to: [$json.to], subject: $json.subject, html: $json.html, tags: [{ name: 'delivery_id', value: $json.delivery_id }, { name: 'template_id', value: $json.template_id }] } }}",
         "options": {}
       },
       "id": "3",
       "name": "Send with Resend",
-      "type": "n8n-nodes-base.resend",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [-120, -60],
       "onError": "continueErrorOutput",
       "credentials": {
-        "resendApi": {
+        "httpHeaderAuth": {
           "id": "CONFIGURE_IN_N8N",
-          "name": "Resend account"
+          "name": "Resend API Authorization"
         }
       }
     },
@@ -103,7 +114,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { delivery_id: $json.delivery_id, status: 'failed', error: $json.failure_message } }}",
+        "jsonBody": "={{ { delivery_id: $json.delivery_id, status: 'reconciling', error: $json.failure_message } }}",
         "options": {}
       },
       "id": "6",
