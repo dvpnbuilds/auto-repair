@@ -21,7 +21,7 @@ const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, {
   db: { schema: AUTO_REPAIR_SCHEMA },
 });
 
-test("booking creates a job with a status history entry, retrievable by plate + phone", async () => {
+test("booking data is private to the service role", async () => {
   const plate = "TEST 0001";
   const phone = "0900 000 0001";
   const { data: shop, error: shopError } = await supabaseService
@@ -57,7 +57,7 @@ test("booking creates a job with a status history entry, retrievable by plate + 
   assert.equal(historyError, null);
 
   try {
-    const { data: foundJob, error: lookupError } = await supabaseAnon
+    const {data: anonymousJob, error: anonymousError} = await supabaseAnon
       .from("autoshop_jobs")
       .select("*")
       .eq("shop_id", shop!.id)
@@ -65,11 +65,22 @@ test("booking creates a job with a status history entry, retrievable by plate + 
       .eq("phone", phone)
       .maybeSingle();
 
+    assert.equal(anonymousJob, null);
+    assert.ok(anonymousError, "anonymous jobs access must be denied");
+
+    const { data: foundJob, error: lookupError } = await supabaseService
+      .from("autoshop_jobs")
+      .select("*")
+      .eq("shop_id", shop!.id)
+      .eq("plate_number", plate)
+      .eq("phone", phone)
+      .maybeSingle();
+
     assert.equal(lookupError, null);
-    assert.ok(foundJob, "expected the booked job to be retrievable by plate + phone");
+    assert.ok(foundJob, "expected the service role to retrieve the booked job");
     assert.equal(foundJob!.status, "booked");
 
-    const { data: history, error: historyLookupError } = await supabaseAnon
+    const { data: history, error: historyLookupError } = await supabaseService
       .from("autoshop_status_history")
       .select("*")
       .eq("job_id", foundJob!.id);

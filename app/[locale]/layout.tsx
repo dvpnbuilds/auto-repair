@@ -69,9 +69,6 @@ export default async function RootLayout({
             <Link href="/services" className="text-sm hover:underline">
               {t("services")}
             </Link>
-            <Link href="/jobs" className="text-sm hover:underline">
-              {t("jobs")}
-            </Link>
             <Link href="/book" className="text-sm hover:underline">
               {t("book")}
             </Link>

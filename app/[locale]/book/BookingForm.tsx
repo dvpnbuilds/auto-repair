@@ -93,9 +93,7 @@ export default function BookingForm({
 
       if (!res.ok) throw new Error();
 
-      router.push(
-        `/track?plate=${encodeURIComponent(plateNumber)}&phone=${encodeURIComponent(phone)}`
-      );
+      router.push("/track");
     } catch {
       setError(t("requestError"));
     } finally {

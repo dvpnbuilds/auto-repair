@@ -165,8 +165,8 @@ test("delivery log is private, idempotent, status-aware, and capped", async () =
       .from("autoshop_email_deliveries")
       .select("id")
       .eq("job_id", job.id);
-    assert.equal(anonError, null);
-    assert.deepEqual(leaked, []);
+    assert.equal(leaked, null);
+    assert.ok(anonError, "anonymous delivery-table access must be denied");
   } finally {
     if (jobId) {
       await service.from("autoshop_jobs").delete().eq("id", jobId);

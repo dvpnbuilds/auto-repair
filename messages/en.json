@@ -7,7 +7,6 @@
     "home": "Home",
     "estimate": "Get Estimate",
     "services": "Services",
-    "jobs": "Jobs",
     "book": "Book",
     "track": "Track",
     "admin": "Admin"
@@ -32,7 +31,7 @@
   },
   "Home": {
     "title": "{shopName} — AutoShop Assistant demo",
-    "intro": "Browse seeded <servicesLink>services</servicesLink> and <jobsLink>jobs</jobsLink> to confirm the data layer."
+    "intro": "Browse <servicesLink>services</servicesLink>, book a repair, or securely <trackLink>track your vehicle</trackLink>."
   },
   "Services": {
     "title": "Services",
@@ -91,11 +90,14 @@
     "plateNumber": "Plate number",
     "phone": "Phone",
     "track": "Track",
+    "tracking": "Checking\u2026",
     "notFound": "No booking found for that plate number and phone. Please check and try again.",
     "lookupError": "We couldn't look up your booking. Please try again.",
+    "rateLimited": "Too many lookup attempts. Please wait ten minutes and try again.",
     "historyError": "We couldn't load the status history. Please try again.",
     "messagesError": "We couldn't load the shop messages. Please try again.",
     "probableIssue": "Probable issue",
+    "scheduledAt": "Scheduled appointment",
     "statusTimeline": "Status timeline",
     "shopMessages": "Messages from the shop"
   },

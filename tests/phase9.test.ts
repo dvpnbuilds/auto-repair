@@ -42,7 +42,7 @@ test("reset restores two complete regional demos with the US shop active", async
       .from("autoshop_services")
       .select("*", {count: "exact", head: true})
       .eq("shop_id", shop.id);
-    const {count: jobCount, error: jobError} = await anon
+    const {count: jobCount, error: jobError} = await service
       .from("autoshop_jobs")
       .select("*", {count: "exact", head: true})
       .eq("shop_id", shop.id);
@@ -53,7 +53,7 @@ test("reset restores two complete regional demos with the US shop active", async
   }
 
   const usShop = shops?.find((shop) => shop.shop_key === "us");
-  const {data: usJobs, error: usJobsError} = await anon
+  const {data: usJobs, error: usJobsError} = await service
     .from("autoshop_jobs")
     .select("vehicle")
     .eq("shop_id", usShop?.id);

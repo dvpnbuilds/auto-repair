@@ -72,12 +72,13 @@ test("admin loop: status change drafts an AI message, and sending it surfaces in
       .single();
     assert.equal(draftError, null);
 
-    const { data: unsentVisible } = await supabaseAnon
+    const {data: unsentVisible, error: unsentError} = await supabaseAnon
       .from("autoshop_messages")
       .select("*")
       .eq("id", draftMsg!.id)
       .maybeSingle();
     assert.equal(unsentVisible, null, "unsent drafts must not be visible to the customer tracker");
+    assert.ok(unsentError, "anonymous message-table access must be denied");
 
     const {data: reservation, error: reserveError} = await supabaseService.rpc(
       "reserve_autoshop_email_delivery",
@@ -112,9 +113,18 @@ test("admin loop: status change drafts an AI message, and sending it surfaces in
       .eq("sent", true)
       .maybeSingle();
 
-    assert.equal(sentError, null);
-    assert.ok(sentVisible, "expected the sent message to be visible via the anon client");
-    assert.equal(sentVisible!.body, draftBody);
+    assert.equal(sentVisible, null);
+    assert.ok(sentError, "sent messages must remain private from the anon client");
+
+    const {data: serviceMessage, error: serviceMessageError} =
+      await supabaseService
+        .from("autoshop_messages")
+        .select("*")
+        .eq("job_id", job!.id)
+        .eq("sent", true)
+        .maybeSingle();
+    assert.equal(serviceMessageError, null);
+    assert.equal(serviceMessage?.body, draftBody);
   } finally {
     await supabaseService.from("autoshop_jobs").delete().eq("id", job!.id);
   }

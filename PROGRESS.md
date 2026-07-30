@@ -47,7 +47,7 @@ Audit: Pending the single consolidated v2 audit requested by the user.
 - 2026-07-14: Added deps: @supabase/supabase-js (client), tsx + server-only (dev, seed script + server-only guard on service-role client). Seed reads .env.local via `node --env-file`, no dotenv dep needed.
 - 2026-07-14: /services and /jobs are plain Server Components fetching via anon client — fine for phase 1 read-only lists; will need dynamic rendering once Phase 3/4 make jobs mutate.
 - 2026-07-14: Added `public read sent autoshop_messages` RLS policy (`sent = true`) — applied manually via Supabase SQL editor (no DB creds available to this session for direct DDL/CLI push). Admin routes use the service-role client so this doesn't affect them.
-- 2026-07-14: ADMIN_PASSCODE set to a demo default (`rapidfix2026`) in .env.local at DV's request so the admin board could be verified live.
+- 2026-07-14: A temporary demo admin passcode was configured for initial verification. Its committed value was removed and the credential rotated after the v2 security audit.
 - 2026-07-14: Vercel project linked (dvpntransport-4680s-projects/auto-repair), all 6 env vars set in Production+Preview, deployed to production. Live URL: https://auto-repair-ten.vercel.app — Phase 5's deploy criterion is now closed (home/services/track routes curl-verified 200 live).
 - 2026-07-30: v2 plan approved (PLAN-v2.md). Scope: shop config layer, full i18n extraction, real email via n8n, US default demo shop. Phases 6-9.
 - 2026-07-30: Taglish dropped; English only. Language becomes a `shops` config field so other languages remain possible without a rebuild.
@@ -66,3 +66,4 @@ Audit: Pending the single consolidated v2 audit requested by the user.
 - 2026-07-30: Phase 9 US service ranges were sanity-checked against current AAA guidance and RepairPal national estimates (updated June/July 2026), including oil service, brake pads, A/C recharge, batteries, diagnostics, alignment, timing belts, suspension, tires, and transmission service.
 - 2026-07-30: Phase 9 adds no dependencies. The test runner is serialized so the intentional global active-shop switch cannot race other live Supabase/OpenRouter tests.
 - 2026-07-30: Phase 9 production deployment completed and retained the existing alias `https://auto-repair-ten.vercel.app`.
+- 2026-07-30: P0 security hardening removed anonymous access to jobs, status history, messages, deliveries, and tracker attempts. `/jobs` now redirects to a plate-plus-phone tracker backed by a rate-limited, service-role-only minimal lookup. Admin authentication moved to a new HMAC-signed v2 cookie using `ADMIN_SESSION_SECRET`, invalidating legacy cookies; the exposed demo credential was removed and must be rotated in local/Vercel environments.

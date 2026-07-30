@@ -33,7 +33,7 @@ Shop-configurable auto repair demo: English AI issue intake with grounded estima
 
 ## Key context
 - No user auth. Admin lives at `/admin` behind a single passcode (`ADMIN_PASSCODE` env), checked server-side.
-- Customer status tracker is a public lookup by plate number + phone — no login.
+- Customer status tracker is a rate-limited server lookup by plate number + phone. Anonymous clients cannot read jobs, histories, or messages directly.
 - The `shops` table is the config backbone: name, country, locale, currency, timezone, language, email sender name/address, address, and price list. Everything else reads from the active shop.
 - Two seeded shops: a US shop in USD (default — F-150, Camry, Silverado) and a PH shop in PHP (RapidFix Auto Care, Quezon City). An admin switcher picks which one the demo runs as.
 - Estimates must always be labeled "initial estimate, subject to inspection." Triage is grounded in the active shop's `services` price list, not the model's guess.

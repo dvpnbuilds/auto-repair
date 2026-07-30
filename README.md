@@ -8,7 +8,7 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 ## Local setup
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply `supabase/migrations/20260730_phase6_shop_config.sql`, `supabase/migrations/20260730_phase8_email_automation.sql`, then `supabase/migrations/20260730_phase9_shop_switcher.sql`.
+3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply `supabase/migrations/20260730_phase6_shop_config.sql`, `supabase/migrations/20260730_phase8_email_automation.sql`, `supabase/migrations/20260730_phase9_shop_switcher.sql`, then `supabase/migrations/20260730_p0_security_hardening.sql`.
 4. `npm run seed` — restores both regional service catalogs and all ten demo jobs, with the US shop active by default. Pass `ph` or `us` to choose a different active shop.
 5. `npm run dev` — http://localhost:3000
 
@@ -21,6 +21,7 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 | `OPENROUTER_API_KEY` | server only | OpenRouter key for triage + message drafting |
 | `OPENROUTER_MODEL` | server only | Model id, e.g. `google/gemini-2.5-flash-lite`. Never hardcode a model elsewhere. |
 | `ADMIN_PASSCODE` | server only | Gates `/admin`; checked server-side, never sent to the client |
+| `ADMIN_SESSION_SECRET` | server only | At least 32 random characters; signs admin sessions and tracker rate-limit keys. Rotate it to invalidate every admin cookie. |
 | `APP_BASE_URL` | server only | Public HTTPS app origin used by n8n status callbacks; no trailing slash |
 | `EMAIL_TRANSPORT` | server only | `n8n` for the primary workflow or `resend` for direct fallback |
 | `EMAIL_DEMO_RECIPIENT` | server only | Optional safe inbox override; required when sending seeded `.example` addresses |
@@ -53,6 +54,8 @@ Before a real send, replace each seeded `.example` `email_sender_address` in `au
 5. After deploy, run `npm run seed` locally (pointed at the same Supabase project) to ensure demo data is fresh before a pitch.
 
 Current production URL: https://auto-repair-ten.vercel.app
+
+The public tracker accepts plate number plus phone through a rate-limited server endpoint. Anonymous Supabase users can read shop/service catalogs only; customer jobs, histories, messages, email deliveries, and tracker attempts are private.
 
 ## Testing
 `npm test` runs `tests/*.test.ts` against the live Supabase + OpenRouter config in `.env.local`.

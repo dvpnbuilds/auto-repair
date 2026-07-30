@@ -16,11 +16,11 @@ export default async function Home() {
               {chunks}
             </Link>
           ),
-          jobsLink: (chunks) => (
-            <Link href="/jobs" className="underline">
+          trackLink: (chunks) => (
+            <Link href="/track" className="underline">
               {chunks}
             </Link>
-          ),
+          )
         })}
       </p>
     </div>
