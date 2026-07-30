@@ -10,7 +10,11 @@ Create these credentials in n8n after import:
 2. **Resend API key** — Header Auth with header name `Authorization` and value
    `Bearer <your Resend API key>`.
 
-Reconnect the placeholder credentials on the imported nodes. Do not put secret values in the workflow JSON.
+Reconnect the placeholder credentials on the imported nodes. Apply the
+**AutoShop Webhook Secret** credential to the incoming webhook and both
+callback HTTP nodes. Callback authentication is read directly from the n8n
+credential store; the secret is never copied into workflow execution data. Do
+not put secret values in the workflow JSON.
 
 ## Environment
 

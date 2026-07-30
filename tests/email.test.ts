@@ -14,6 +14,7 @@ import type {
   SendEmailInput,
 } from "../lib/email/types";
 import {hasValidN8nSecret} from "../lib/webhooks/auth";
+import {callWithRetry} from "../lib/callWithRetry";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const deliveryId = "00000000-0000-4000-8000-000000000008";
@@ -101,13 +102,16 @@ test("n8n transport authenticates, preserves idempotency, and sends the template
   );
 });
 
-test("n8n retries preserve the exact same provider idempotency identity", async () => {
+test("n8n lost-response retries preserve the exact same provider identity", async () => {
   const capturedKeys: string[] = [];
   let attempts = 0;
   const fetcher: typeof fetch = async (_url, init) => {
     attempts += 1;
     capturedKeys.push(new Headers(init?.headers).get("Idempotency-Key") ?? "");
-    return new Response(null, {status: attempts === 1 ? 503 : 202});
+    if (attempts === 1) {
+      throw new TypeError("Connection lost after n8n accepted the request");
+    }
+    return new Response(null, {status: 202});
   };
 
   await dispatchN8nEmail(
@@ -123,6 +127,41 @@ test("n8n retries preserve the exact same provider idempotency identity", async 
   );
 
   assert.equal(attempts, 2);
+  assert.deepEqual(capturedKeys, [deliveryId, deliveryId]);
+});
+
+test("Resend callback loss retries resolve to one provider message", async () => {
+  const acceptedByKey = new Map<string, string>();
+  const capturedKeys: string[] = [];
+  let attempts = 0;
+
+  const providerId = await callWithRetry(
+    () =>
+      dispatchResendEmail(
+        sampleInput,
+        "customer@example.test",
+        deliveryId,
+        async (_message, options) => {
+          attempts += 1;
+          capturedKeys.push(options.idempotencyKey);
+          const id =
+            acceptedByKey.get(options.idempotencyKey) ??
+            "one-provider-message";
+          acceptedByKey.set(options.idempotencyKey, id);
+          if (attempts === 1) {
+            throw new TypeError(
+              "Connection lost after provider accepted the message"
+            );
+          }
+          return {data: {id}, error: null};
+        }
+      ),
+    1,
+    0
+  );
+
+  assert.equal(providerId, "one-provider-message");
+  assert.equal(acceptedByKey.size, 1);
   assert.deepEqual(capturedKeys, [deliveryId, deliveryId]);
 });
 
@@ -214,6 +253,18 @@ test("exported n8n workflows are importable and include delivery plus on-demand 
   const renderer = deliveryWorkflow.nodes.find(
     (node: {name: string}) => node.name === "Render Email Template"
   );
+  assert.doesNotMatch(renderer.parameters.jsCode, /callback_secret/);
+  for (const callbackName of ["Callback Sent", "Callback Failed"]) {
+    const callback = deliveryWorkflow.nodes.find(
+      (node: {name: string}) => node.name === callbackName
+    );
+    assert.equal(callback.parameters.genericAuthType, "httpHeaderAuth");
+    assert.equal(
+      callback.credentials.httpHeaderAuth.name,
+      "AutoShop Webhook Secret"
+    );
+    assert.doesNotMatch(JSON.stringify(callback.parameters), /callback_secret/);
+  }
   for (const templateId of [
     "status_update",
     "completion_report",

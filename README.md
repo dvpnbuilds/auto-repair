@@ -8,7 +8,7 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 ## Local setup
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply `supabase/migrations/20260730_phase6_shop_config.sql`, `supabase/migrations/20260730_phase8_email_automation.sql`, `supabase/migrations/20260730_phase9_shop_switcher.sql`, `supabase/migrations/20260730_p0_security_hardening.sql`, then `supabase/migrations/20260730_p1_integrity_hardening.sql`.
+3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply the migrations in this order: `20260730_phase6_shop_config.sql`, `20260730_phase8_email_automation.sql`, `20260730_phase9_shop_switcher.sql`, `20260730_p0_security_hardening.sql`, `20260730_p1_integrity_hardening.sql`, and `20260730_p2_audit_hardening.sql`.
 4. `npm run seed` — restores both regional service catalogs and all ten demo jobs, with the US shop active by default. Pass `ph` or `us` to choose a different active shop.
 5. `npm run dev` — http://localhost:3000
 
@@ -36,7 +36,10 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 
 ## Locales
 
-The app ships English at `/en`; visiting `/` redirects there. Add a locale to `i18n/routing.ts` and provide its matching `messages/<locale>.json` bundle—page components require no copy changes.
+The app ships English at `/en`; visiting `/` redirects there. To add a locale,
+add only its valid `messages/<locale>.json` bundle. The pre-development and
+pre-build locale generator discovers bundles and refreshes routing
+automatically; application and routing source files require no manual edit.
 
 ## Email automation
 
@@ -55,7 +58,9 @@ Before a real send, replace each seeded `.example` `email_sender_address` in `au
 
 Current production URL: https://auto-repair-ten.vercel.app
 
-The public tracker accepts plate number plus phone through a rate-limited server endpoint. Anonymous Supabase users can read shop/service catalogs only; customer jobs, histories, messages, email deliveries, and tracker attempts are private.
+The public tracker accepts plate number plus phone through a rate-limited server endpoint. Booking, triage, and administrator login also enforce endpoint-specific database quotas and bounded request bodies. Anonymous Supabase users can read shop/service catalogs only; customer jobs, histories, messages, email deliveries, and rate-limit attempts are private.
 
 ## Testing
-`npm test` runs `tests/*.test.ts` against the live Supabase + OpenRouter config in `.env.local`.
+`npm test` runs `tests/*.test.ts` against the live Supabase + OpenRouter config in `.env.local`. Email fault tests cover lost responses, ambiguous `reconciling` outcomes, callback replay, and late callbacks while reusing one delivery identity. Real-provider and n8n activation checks remain a separate live-QA step.
+
+See `RELEASE-v2.md` for the immutable V2 lineage and rollback rules.

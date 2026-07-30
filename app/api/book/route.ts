@@ -1,4 +1,6 @@
 import {NextResponse} from "next/server";
+import {checkApiRateLimit} from "@/lib/api/rate-limit";
+import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {supabaseService} from "@/lib/supabase/server";
 
 type BookBody = {
@@ -16,8 +18,37 @@ type BookBody = {
   scheduled_time: string;
 };
 
-function nullableString(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function boundedString(
+  value: unknown,
+  minimum: number,
+  maximum: number
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length >= minimum &&
+    value.trim().length <= maximum
+  );
+}
+
+function nullableBoundedString(
+  value: unknown,
+  maximum: number
+): value is string | null {
+  return (
+    value === null ||
+    (typeof value === "string" && value.trim().length <= maximum)
+  );
+}
+
+function isRealDate(value: string): boolean {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
 function isValidBody(value: unknown): value is BookBody {
@@ -25,31 +56,61 @@ function isValidBody(value: unknown): value is BookBody {
   const v = value as Record<string, unknown>;
   return (
     typeof v.shop_id === "string" &&
-    /^[0-9a-f-]{36}$/i.test(v.shop_id) &&
-    typeof v.customer_name === "string" &&
-    v.customer_name.trim().length > 0 &&
-    typeof v.plate_number === "string" &&
-    v.plate_number.trim().length > 0 &&
-    typeof v.phone === "string" &&
-    v.phone.trim().length > 0 &&
+    UUID_PATTERN.test(v.shop_id) &&
+    boundedString(v.customer_name, 1, 100) &&
+    boundedString(v.plate_number, 2, 20) &&
+    boundedString(v.phone, 7, 24) &&
     typeof v.customer_email === "string" &&
+    v.customer_email.trim().length <= 254 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.customer_email.trim()) &&
-    typeof v.vehicle === "string" &&
-    v.vehicle.trim().length > 0 &&
+    boundedString(v.vehicle, 1, 120) &&
     (v.service_id === null ||
-      (typeof v.service_id === "string" && /^[0-9a-f-]{36}$/i.test(v.service_id))) &&
-    nullableString(v.issue_description) &&
-    nullableString(v.probable_issue) &&
-    nullableString(v.urgency) &&
+      (typeof v.service_id === "string" && UUID_PATTERN.test(v.service_id))) &&
+    nullableBoundedString(v.issue_description, 2_000) &&
+    nullableBoundedString(v.probable_issue, 500) &&
+    (v.urgency === null ||
+      v.urgency === "low" ||
+      v.urgency === "medium" ||
+      v.urgency === "high") &&
     typeof v.scheduled_date === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(v.scheduled_date) &&
+    isRealDate(v.scheduled_date) &&
     typeof v.scheduled_time === "string" &&
-    /^\d{2}:\d{2}$/.test(v.scheduled_time)
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v.scheduled_time)
   );
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
+  try {
+    const rateLimit = await checkApiRateLimit(request, {
+      bucket: "booking",
+      limit: 5,
+      windowSeconds: 60 * 60,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {error: "Too many booking attempts"},
+        {
+          status: 429,
+          headers: {"Retry-After": String(rateLimit.retryAfter)},
+        }
+      );
+    }
+  } catch (error) {
+    console.error("Booking rate limit failed:", error);
+    return NextResponse.json({error: "Booking is unavailable"}, {status: 503});
+  }
+
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, 8 * 1024);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({error: error.message}, {status: error.status});
+    }
+    return NextResponse.json({error: "Invalid request body"}, {status: 400});
+  }
+
   if (!isValidBody(body)) {
     return NextResponse.json(
       {error: "Missing or invalid booking fields"},

@@ -166,6 +166,19 @@ create table if not exists autoshop_tracker_attempts (
 create index if not exists autoshop_tracker_attempts_rate_window
   on autoshop_tracker_attempts (rate_key, attempted_at);
 
+create table if not exists autoshop_api_attempts (
+  id uuid primary key default gen_random_uuid(),
+  bucket text not null,
+  rate_key text not null,
+  attempted_at timestamptz not null default now()
+);
+
+create index if not exists autoshop_api_attempts_lookup
+  on autoshop_api_attempts (bucket, rate_key, attempted_at desc);
+
+create index if not exists autoshop_api_attempts_cleanup
+  on autoshop_api_attempts (attempted_at);
+
 create or replace function check_autoshop_tracker_rate_limit(
   p_rate_key text,
   p_limit integer,
@@ -202,6 +215,53 @@ begin
 
   insert into autoshop_tracker_attempts (rate_key)
     values (p_rate_key);
+  return true;
+end;
+$$;
+
+create or replace function check_autoshop_api_rate_limit(
+  p_bucket text,
+  p_rate_key text,
+  p_limit integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  recent_attempts integer;
+begin
+  if p_bucket not in ('admin-login', 'booking', 'triage')
+    or p_rate_key !~ '^[0-9a-f]{64}$'
+    or p_limit < 1
+    or p_limit > 100
+    or p_window_seconds < 1
+    or p_window_seconds > 86400 then
+    raise exception 'INVALID_RATE_LIMIT_ARGUMENTS';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(p_bucket || ':' || p_rate_key, 0)
+  );
+
+  delete from autoshop_api_attempts
+    where attempted_at < now() - interval '24 hours';
+
+  select count(*)
+    into recent_attempts
+    from autoshop_api_attempts
+    where bucket = p_bucket
+      and rate_key = p_rate_key
+      and attempted_at >= now() - make_interval(secs => p_window_seconds);
+
+  if recent_attempts >= p_limit then
+    return false;
+  end if;
+
+  insert into autoshop_api_attempts (bucket, rate_key)
+    values (p_bucket, p_rate_key);
   return true;
 end;
 $$;
@@ -641,6 +701,7 @@ alter table autoshop_status_history enable row level security;
 alter table autoshop_messages enable row level security;
 alter table autoshop_email_deliveries enable row level security;
 alter table autoshop_tracker_attempts enable row level security;
+alter table autoshop_api_attempts enable row level security;
 
 drop policy if exists "public read autoshop_shops" on autoshop_shops;
 create policy "public read autoshop_shops" on autoshop_shops for select using (true);
@@ -668,6 +729,13 @@ revoke all on function check_autoshop_tracker_rate_limit(
 ) from public, anon, authenticated;
 grant execute on function check_autoshop_tracker_rate_limit(
   text, integer, integer
+) to service_role;
+
+revoke all on function check_autoshop_api_rate_limit(
+  text, text, integer, integer
+) from public, anon, authenticated;
+grant execute on function check_autoshop_api_rate_limit(
+  text, text, integer, integer
 ) to service_role;
 
 revoke all on function lookup_autoshop_job(

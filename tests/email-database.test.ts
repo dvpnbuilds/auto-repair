@@ -103,6 +103,24 @@ test("delivery log is private, idempotent, status-aware, and capped", async () =
       firstReservation.delivery.id
     );
 
+    const {data: ambiguous, error: ambiguousError} = await service.rpc(
+      "complete_autoshop_email_delivery",
+      {
+        p_delivery_id: firstReservation.delivery.id,
+        p_status: "reconciling",
+        p_provider_message_id: null,
+        p_error: "provider response lost",
+      }
+    );
+    assert.equal(ambiguousError, null);
+    assert.equal(ambiguous.status, "reconciling");
+
+    const {data: retryReservation, error: retryReservationError} =
+      await service.rpc("reserve_autoshop_email_delivery", reserveArgs);
+    assert.equal(retryReservationError, null);
+    assert.equal(retryReservation.is_new, false);
+    assert.equal(retryReservation.delivery.id, firstReservation.delivery.id);
+
     const {data: completed, error: completeError} = await service.rpc(
       "complete_autoshop_email_delivery",
       {

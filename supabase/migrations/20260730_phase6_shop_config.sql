@@ -42,11 +42,53 @@ create unique index if not exists autoshop_one_active_shop
   on autoshop_shops (is_active)
   where is_active = true;
 
+insert into autoshop_shops (
+  shop_key,
+  name,
+  country,
+  locale,
+  currency,
+  timezone,
+  language,
+  email_sender_name,
+  email_sender_address,
+  address,
+  is_active
+)
+values (
+  'ph',
+  'RapidFix Auto Care',
+  'PH',
+  'en-PH',
+  'PHP',
+  'Asia/Manila',
+  'en',
+  'RapidFix Auto Care',
+  'service@rapidfix-auto.example',
+  'Quezon City, Metro Manila',
+  not exists (select 1 from autoshop_shops where is_active = true)
+)
+on conflict (shop_key) do nothing;
+
 alter table autoshop_services
   add column if not exists shop_id uuid references autoshop_shops(id);
 
 alter table autoshop_jobs
   add column if not exists shop_id uuid references autoshop_shops(id);
+
+update autoshop_services
+  set shop_id = (select id from autoshop_shops where shop_key = 'ph')
+  where shop_id is null;
+
+update autoshop_jobs
+  set shop_id = (select id from autoshop_shops where shop_key = 'ph')
+  where shop_id is null;
+
+alter table autoshop_services
+  alter column shop_id set not null;
+
+alter table autoshop_jobs
+  alter column shop_id set not null;
 
 alter table autoshop_services
   drop constraint if exists autoshop_services_name_key;

@@ -6,7 +6,7 @@ Shop-configurable auto repair demo: English AI issue intake with grounded estima
 - Next.js 14+ (App Router, TypeScript) — one repo, deploys to Vercel
 - Supabase (Postgres) — persistent data via `@supabase/supabase-js`
 - OpenRouter — LLM calls, server-side only, model in `OPENROUTER_MODEL` env (default `google/gemini-2.5-flash-lite`)
-- next-intl — i18n routing and message bundles (`messages/en.json`); `en` is the only shipped locale
+- next-intl — i18n routing and message bundles discovered from `messages/*.json`; `en` is the only shipped locale
 - n8n (self-hosted) — email delivery and maintenance reminder scheduling, called over an authenticated webhook
 - Resend — fallback email transport, selected via `EMAIL_TRANSPORT`
 - Tailwind CSS for UI
@@ -37,7 +37,7 @@ Shop-configurable auto repair demo: English AI issue intake with grounded estima
 - The `shops` table is the config backbone: name, country, locale, currency, timezone, language, email sender name/address, address, and price list. Everything else reads from the active shop.
 - Two seeded shops: a US shop in USD (default — F-150, Camry, Silverado) and a PH shop in PHP (RapidFix Auto Care, Quezon City). An admin switcher picks which one the demo runs as.
 - Estimates must always be labeled "initial estimate, subject to inspection." Triage is grounded in the active shop's `services` price list, not the model's guess.
-- English only. Language is a `shops` field passed into triage and message-drafting prompts, so adding a language later is config plus a bundle, not a rebuild.
+- English only. Language is a `shops` field passed into triage and message-drafting prompts. Adding a complete `messages/<locale>.json` bundle is enough for the build-time locale generator to add routing; no application source edit is required.
 - Email is really sent, not previewed. `EMAIL_TRANSPORT=n8n|resend` selects the transport; n8n is primary and also runs the maintenance reminder schedule trigger.
 - The n8n webhook requires a shared-secret header. An unauthenticated webhook that sends email is an open relay.
 - A demo send cap prevents a live pitch from spamming. n8n workflow JSON lives in `n8n/workflows/` so it is version-controlled and reproducible for client handoff.
