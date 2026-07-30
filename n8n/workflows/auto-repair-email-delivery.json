@@ -1,0 +1,178 @@
+{
+  "name": "Auto Repair — Email Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "auto-repair-email",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Authenticated Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-620, 0],
+      "webhookId": "auto-repair-email",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_IN_N8N",
+          "name": "AutoShop Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $json.body ?? $json;\nconst payload = request.payload;\nconst subjects = {\n  status_update: `${payload.shopName}: repair status update`,\n  completion_report: `${payload.shopName}: your repair is complete`,\n  reminder: `${payload.shopName}: appointment reminder`,\n  review_request: `${payload.shopName}: how did we do?`\n};\nif (!subjects[request.template_id]) throw new Error('Unsupported email template');\nconst escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\"', '&quot;').replaceAll(\"'\", '&#039;');\nconst details = [\n  `<strong>Vehicle:</strong> ${escapeHtml(payload.vehicle)}`,\n  payload.status ? `<strong>Status:</strong> ${escapeHtml(payload.status)}` : null,\n  payload.scheduledAt ? `<strong>Appointment:</strong> ${escapeHtml(payload.scheduledAt)}` : null\n].filter(Boolean).join('<br>');\nreturn [{json: {\n  ...request,\n  callback_secret: $json.headers?.['x-autoshop-webhook-secret'],\n  subject: subjects[request.template_id],\n  html: `<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#18181b;max-width:560px\"><p>Hi ${escapeHtml(payload.customerName)},</p><p>${escapeHtml(payload.messageBody)}</p><p>${details}</p><p style=\"color:#71717a;font-size:13px\">${escapeHtml(payload.shopName)}<br>${escapeHtml(payload.shopAddress)}</p></div>`\n}}];"
+      },
+      "id": "2",
+      "name": "Render Email Template",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-380, 0]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from_name + ' <' + $json.from_email + '>' }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Send with Resend",
+      "type": "n8n-nodes-base.resend",
+      "typeVersion": 1,
+      "position": [-120, -60],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "resendApi": {
+          "id": "CONFIGURE_IN_N8N",
+          "name": "Resend account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Render Email Template').item.json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-autoshop-webhook-secret",
+              "value": "={{ $('Render Email Template').item.json.callback_secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { delivery_id: $('Render Email Template').item.json.delivery_id, status: 'sent', provider_message_id: $json.id ?? $json.data?.id ?? null } }}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Callback Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [150, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Render Email Template').item.json;\nreturn [{json: {...source, failure_message: $json.message ?? $json.error?.message ?? 'n8n email delivery failed'}}];"
+      },
+      "id": "5",
+      "name": "Build Failure Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-autoshop-webhook-secret",
+              "value": "={{ $json.callback_secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { delivery_id: $json.delivery_id, status: 'failed', error: $json.failure_message } }}",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Callback Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [390, 80]
+    }
+  ],
+  "connections": {
+    "Authenticated Email Webhook": {
+      "main": [
+        [
+          {
+            "node": "Render Email Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Email Template": {
+      "main": [
+        [
+          {
+            "node": "Send with Resend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send with Resend": {
+      "main": [
+        [
+          {
+            "node": "Callback Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "00000000-0000-4000-8000-000000000008",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

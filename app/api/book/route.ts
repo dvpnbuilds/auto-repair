@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/lib/supabase/server";
+import { getActiveShop } from "@/lib/shop-config";
 
 type BookBody = {
   customer_name: string;
   plate_number: string;
   phone: string;
+  customer_email: string;
   vehicle: string;
   service_id: string | null;
   issue_description: string | null;
@@ -25,6 +27,8 @@ function isValidBody(value: unknown): value is BookBody {
     v.plate_number.trim().length > 0 &&
     typeof v.phone === "string" &&
     v.phone.trim().length > 0 &&
+    typeof v.customer_email === "string" &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.customer_email.trim()) &&
     typeof v.vehicle === "string" &&
     v.vehicle.trim().length > 0 &&
     typeof v.scheduled_at === "string" &&
@@ -39,12 +43,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required booking fields" }, { status: 400 });
   }
 
+  const shop = await getActiveShop(supabaseService);
+  if (body.service_id) {
+    const { data: service } = await supabaseService
+      .from("autoshop_services")
+      .select("id")
+      .eq("id", body.service_id)
+      .eq("shop_id", shop.id)
+      .maybeSingle();
+
+    if (!service) {
+      return NextResponse.json({ error: "Service is not available for the active shop" }, { status: 400 });
+    }
+  }
+
   const { data: job, error: jobError } = await supabaseService
     .from("autoshop_jobs")
     .insert({
+      shop_id: shop.id,
       customer_name: body.customer_name.trim(),
       plate_number: body.plate_number.trim().toUpperCase(),
       phone: body.phone.trim(),
+      customer_email: body.customer_email.trim().toLowerCase(),
       vehicle: body.vehicle.trim(),
       service_id: body.service_id ?? null,
       issue_description: body.issue_description ?? null,

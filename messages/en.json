@@ -1,0 +1,141 @@
+{
+  "Metadata": {
+    "title": "AutoShop Assistant",
+    "description": "Shop-configurable AI-triaged repair intake and booking demo"
+  },
+  "Navigation": {
+    "home": "Home",
+    "estimate": "Get Estimate",
+    "services": "Services",
+    "jobs": "Jobs",
+    "book": "Book",
+    "track": "Track",
+    "admin": "Admin"
+  },
+  "Common": {
+    "loading": "Loading…",
+    "initialEstimateDisclaimer": "Initial estimate, subject to inspection.",
+    "needsInspection": "Needs inspection",
+    "status": {
+      "booked": "Booked",
+      "in_progress": "In progress",
+      "waiting_parts": "Waiting for parts",
+      "ready": "Ready",
+      "done": "Done"
+    },
+    "messageKind": {
+      "status_update": "Status update",
+      "completion_report": "Completion report",
+      "reminder": "Reminder",
+      "review_request": "Review request"
+    }
+  },
+  "Home": {
+    "title": "{shopName} — AutoShop Assistant demo",
+    "intro": "Browse seeded <servicesLink>services</servicesLink> and <jobsLink>jobs</jobsLink> to confirm the data layer."
+  },
+  "Services": {
+    "title": "Services",
+    "empty": "No services yet.",
+    "duration": "{minutes} min",
+    "loadError": "We couldn't load the services. Please try again."
+  },
+  "Jobs": {
+    "title": "Jobs",
+    "empty": "No jobs yet.",
+    "loadError": "We couldn't load the jobs. Please try again."
+  },
+  "Intake": {
+    "title": "Describe your car problem",
+    "intro": "Tell us what your vehicle is doing in your own words.",
+    "placeholder": "For example: It makes a knocking noise when I brake…",
+    "send": "Send",
+    "sending": "Sending…",
+    "estimateNow": "Get my estimate now",
+    "requestError": "Something went wrong. Please try again.",
+    "probableIssue": "Probable issue",
+    "urgency": "Urgency",
+    "suggestedService": "Suggested service",
+    "estimate": "Estimate",
+    "bookRepair": "Book this repair",
+    "urgencyLevel": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    }
+  },
+  "Booking": {
+    "title": "Book a repair",
+    "loading": "Loading booking form…",
+    "loadError": "We couldn't load the booking form. Please try again.",
+    "requiredError": "Please fill in all required fields.",
+    "requestError": "Something went wrong. Please try again.",
+    "name": "Name",
+    "plateNumber": "Plate number",
+    "phone": "Phone",
+    "email": "Email",
+    "emailPlaceholder": "you@example.com",
+    "vehicle": "Vehicle",
+    "vehiclePlaceholder": "For example: 2018 Honda City",
+    "service": "Service",
+    "selectService": "Select a service",
+    "issueDescription": "Issue description",
+    "date": "Date",
+    "time": "Time",
+    "booking": "Booking…",
+    "bookNow": "Book now"
+  },
+  "Tracking": {
+    "title": "Track your repair",
+    "intro": "Check your vehicle's status using your plate number and phone.",
+    "plateNumber": "Plate number",
+    "phone": "Phone",
+    "track": "Track",
+    "notFound": "No booking found for that plate number and phone. Please check and try again.",
+    "lookupError": "We couldn't look up your booking. Please try again.",
+    "historyError": "We couldn't load the status history. Please try again.",
+    "messagesError": "We couldn't load the shop messages. Please try again.",
+    "probableIssue": "Probable issue",
+    "statusTimeline": "Status timeline",
+    "shopMessages": "Messages from the shop"
+  },
+  "Admin": {
+    "loginTitle": "Admin login",
+    "passcode": "Passcode",
+    "incorrectPasscode": "Incorrect passcode.",
+    "checking": "Checking…",
+    "logIn": "Log in",
+    "boardTitle": "{shopName} job board",
+    "jobsLoadError": "We couldn't load the jobs. Please try again.",
+    "messagesLoadError": "We couldn't load the messages. Please try again.",
+    "shopsLoadError": "We couldn't load the demo markets. Please try again.",
+    "activeShop": "Active shop",
+    "demoMarket": "Choose the demo market",
+    "demoMarketHint": "Switch the entire customer and admin experience between the US and Philippines without changing code.",
+    "shopOptions": "Available demo shops",
+    "shopRegion": "{country} market · {currency}",
+    "switching": "Switching…",
+    "switchError": "Failed to switch the demo shop.",
+    "resetConfirm": "Reset all demo data? This restores both shops and returns the experience to the US market.",
+    "resetHint": "Reset restores both regional catalogs and all ten demo jobs, with the US shop active.",
+    "resetting": "Resetting…",
+    "reset": "Reset demo data",
+    "resetError": "Failed to reset demo data.",
+    "advanceError": "Failed to advance the job status.",
+    "draftError": "Failed to generate the message draft.",
+    "sendError": "Failed to send the message.",
+    "noJobs": "No jobs",
+    "moving": "Moving…",
+    "advanceTo": "Advance to {status}",
+    "drafting": "Drafting…",
+    "draftKind": "Draft {kind}",
+    "messageState": "{kind} — {state}",
+    "sent": "sent",
+    "draft": "draft",
+    "queued": "queued",
+    "failed": "failed",
+    "capped": "send cap reached",
+    "sending": "Sending…",
+    "send": "Send"
+  }
+}

@@ -1,5 +1,7 @@
 import { supabaseAnon } from "@/lib/supabase/client";
 import { callWithRetry } from "@/lib/callWithRetry";
+import { formatCurrency } from "@/lib/formatting";
+import { getActiveShop, type ShopConfig } from "@/lib/shop-config";
 
 export const ESTIMATE_DISCLAIMER = "Initial estimate, subject to inspection.";
 
@@ -30,21 +32,31 @@ type Service = {
   price_max: number;
 };
 
-async function fetchServices(): Promise<Service[]> {
+async function fetchServices(shopId: string): Promise<Service[]> {
   const { data, error } = await supabaseAnon
     .from("autoshop_services")
-    .select("name, category, price_min, price_max");
+    .select("name, category, price_min, price_max")
+    .eq("shop_id", shopId);
   if (error) throw error;
   return data ?? [];
 }
 
-function buildSystemPrompt(services: Service[], forceFinal: boolean): string {
+function buildSystemPrompt(
+  services: Service[],
+  forceFinal: boolean,
+  shop: ShopConfig,
+  language: string
+): string {
   const priceList = services
-    .map((s) => `- ${s.name} (${s.category}): P${s.price_min}-P${s.price_max}`)
+    .map(
+      (service) =>
+        `- ${service.name} (${service.category}): ${formatCurrency(service.price_min, shop)}-${formatCurrency(service.price_max, shop)}`
+    )
     .join("\n");
 
-  return `You are RapidFix's Taglish-speaking intake assistant for a Philippine auto repair shop.
-A customer describes a car problem. Ask at most 2-3 short clarifying questions in Taglish
+  return `You are ${shop.name}'s intake assistant for an auto repair shop.
+Write all customer-facing text in the language identified by BCP 47 code "${language}".
+A customer describes a car problem. Ask at most 2-3 short clarifying questions
 ONLY if genuinely needed to identify the issue and match it to one of the shop's services.
 Otherwise, give your best-effort diagnosis right away.
 
@@ -54,7 +66,7 @@ ${priceList}
 Respond with ONLY a JSON object, no other text, in one of these two shapes:
 
 To ask a follow-up question:
-{"status":"ask","question":"<short Taglish question>"}
+{"status":"ask","question":"<short question in the configured language>"}
 
 To give a final diagnosis:
 {"status":"done","probable_issue":"<short description>","urgency":"low"|"medium"|"high","service_name":"<exact name from the price list, or null if none fits>","needs_inspection":<true if you cannot confidently match a service>}
@@ -130,11 +142,12 @@ export async function runTriage(
   if (!apiKey) throw new Error("Missing OPENROUTER_API_KEY");
   if (!model) throw new Error("Missing OPENROUTER_MODEL");
 
-  const services = await fetchServices();
-  const systemPrompt = buildSystemPrompt(services, forceFinal);
+  const shop = await getActiveShop();
+  const services = await fetchServices(shop.id);
+  const systemPrompt = buildSystemPrompt(services, forceFinal, shop, shop.language);
 
-  const response = await callWithRetry(() =>
-    fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const parsed = await callWithRetry(async () => {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -145,20 +158,20 @@ export async function runTriage(
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         response_format: { type: "json_object" },
       }),
-    })
-  );
+    });
 
-  if (!response.ok) {
-    throw new Error(`OpenRouter request failed: ${response.status} ${await response.text()}`);
-  }
+    if (!response.ok) {
+      throw new Error(`OpenRouter request failed: ${response.status} ${await response.text()}`);
+    }
 
-  const body = await response.json();
-  const content = body?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
-    throw new Error("OpenRouter response missing message content");
-  }
+    const body = await response.json();
+    const content = body?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new Error("OpenRouter response missing message content");
+    }
 
-  const parsed = parseModelJson(content);
+    return parseModelJson(content);
+  });
 
   if (parsed.status === "ask" && !forceFinal) {
     return validateAsk(parsed);

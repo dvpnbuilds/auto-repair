@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminAuthedFromHeader } from "@/lib/admin/auth";
 import { supabaseService } from "@/lib/supabase/server";
 import { draftMessage, type MessageKind } from "@/lib/openrouter/messages";
+import { getActiveShop } from "@/lib/shop-config";
 
 const DRAFTABLE_KINDS: MessageKind[] = ["completion_report", "reminder", "review_request"];
 
@@ -22,10 +23,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid kind" }, { status: 400 });
   }
 
+  const shop = await getActiveShop(supabaseService);
   const { data: job, error: jobError } = await supabaseService
     .from("autoshop_jobs")
     .select("*")
     .eq("id", id)
+    .eq("shop_id", shop.id)
     .single();
 
   if (jobError || !job) {

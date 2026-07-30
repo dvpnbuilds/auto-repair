@@ -3,6 +3,9 @@ import { isAdminAuthedFromHeader } from "@/lib/admin/auth";
 import { supabaseService } from "@/lib/supabase/server";
 import { isJobStatus } from "@/lib/statuses";
 import { draftMessage } from "@/lib/openrouter/messages";
+import { getActiveShop } from "@/lib/shop-config";
+import {createEmailPayload} from "@/lib/email/payload";
+import {sendEmail} from "@/lib/email/send";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminAuthedFromHeader(request.headers.get("cookie"))) {
@@ -17,10 +20,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
+  const shop = await getActiveShop(supabaseService);
   const { data: job, error: jobError } = await supabaseService
     .from("autoshop_jobs")
     .update({ status })
     .eq("id", id)
+    .eq("shop_id", shop.id)
     .select()
     .single();
 
@@ -56,5 +61,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Failed to save draft message" }, { status: 500 });
   }
 
-  return NextResponse.json({ job, message });
+  try {
+    const email = await sendEmail({
+      shop,
+      jobId: job.id,
+      messageId: message.id,
+      templateId: "status_update",
+      to: job.customer_email,
+      payload: createEmailPayload(job, shop, message.body),
+    });
+    return NextResponse.json({job, message, email});
+  } catch (err) {
+    console.error("Status email delivery failed:", err);
+    return NextResponse.json({
+      job,
+      message,
+      email: null,
+      emailError: true,
+    });
+  }
 }

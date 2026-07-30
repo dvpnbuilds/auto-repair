@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
+import { shopLocalDateTimeToIso } from "../lib/formatting";
+import { AUTO_REPAIR_SCHEMA } from "../lib/supabase/schema";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -12,22 +14,34 @@ if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
   );
 }
 
-const supabaseService = createClient(supabaseUrl, supabaseServiceRoleKey);
-const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseService = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  db: { schema: AUTO_REPAIR_SCHEMA },
+});
+const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, {
+  db: { schema: AUTO_REPAIR_SCHEMA },
+});
 
 test("booking creates a job with a status history entry, retrievable by plate + phone", async () => {
   const plate = "TEST 0001";
   const phone = "0900 000 0001";
+  const { data: shop, error: shopError } = await supabaseService
+    .from("autoshop_shops")
+    .select("*")
+    .eq("is_active", true)
+    .single();
+  assert.equal(shopError, null);
+  assert.ok(shop);
 
   const { data: job, error: jobError } = await supabaseService
     .from("autoshop_jobs")
     .insert({
+      shop_id: shop!.id,
       customer_name: "Test Customer",
       plate_number: plate,
       phone,
       vehicle: "2020 Toyota Wigo",
       issue_description: "Test booking from tests/booking.test.ts",
-      scheduled_at: "2026-08-01T09:00:00+08:00",
+      scheduled_at: shopLocalDateTimeToIso("2026-08-01", "09:00", shop!),
     })
     .select()
     .single();
@@ -46,6 +60,7 @@ test("booking creates a job with a status history entry, retrievable by plate + 
     const { data: foundJob, error: lookupError } = await supabaseAnon
       .from("autoshop_jobs")
       .select("*")
+      .eq("shop_id", shop!.id)
       .ilike("plate_number", plate)
       .eq("phone", phone)
       .maybeSingle();

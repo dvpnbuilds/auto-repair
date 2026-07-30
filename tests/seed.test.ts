@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
+import { AUTO_REPAIR_SCHEMA } from "../lib/supabase/schema";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -9,7 +10,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local");
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  db: { schema: AUTO_REPAIR_SCHEMA },
+});
+
+test("seed populates both shop configurations with exactly one active shop", async () => {
+  const { data, error } = await supabase.from("autoshop_shops").select("*");
+  assert.equal(error, null);
+  assert.ok(data && data.some((shop) => shop.shop_key === "us"));
+  assert.ok(data && data.some((shop) => shop.shop_key === "ph"));
+  assert.equal(data?.filter((shop) => shop.is_active).length, 1);
+});
 
 test("seed populates autoshop_services with the RapidFix price list", async () => {
   const { data, error } = await supabase.from("autoshop_services").select("*");

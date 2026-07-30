@@ -8,13 +8,15 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "node --env-file=.env.local --import tsx scripts/seed.ts",
-    "test": "node --env-file=.env.local --import tsx --test tests/*.test.ts"
+    "test": "node --env-file=.env.local --import tsx --test --test-concurrency=1 tests/*.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.3",
     "next": "16.2.10",
+    "next-intl": "^4.13.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "resend": "^6.18.1",
     "server-only": "^0.0.1"
   },
   "devDependencies": {

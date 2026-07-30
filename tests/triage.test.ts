@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { runTriage, type TriageMessage } from "../lib/openrouter/triage";
 
 const sampleComplaints: string[] = [
-  "Kumakalampag pag nagbe-brake, parang bakal kagat-kagat.",
-  "Mainit hangin sa aircon kahit naka-max na yung blower.",
-  "Ayaw na mag-start, mabagal yung crank tapos namamatay dashboard lights.",
-  "Regular PM lang, malapit na sa 5000km, need paba oil change?",
-  "May tunog na 'tuk tuk' sa harap tuwing may bump, lalo na sa mabilis.",
+  "There is a grinding metal noise whenever I brake.",
+  "The air conditioner blows warm air even at the maximum setting.",
+  "The engine will not start, it cranks slowly, and the dashboard lights go out.",
+  "The car is near 5,000 km and is due for routine maintenance.",
+  "There is a knocking sound from the front whenever I drive over a bump.",
 ];
 
 for (const complaint of sampleComplaints) {
