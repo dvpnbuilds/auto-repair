@@ -13,7 +13,7 @@ import type {
 const DEFAULT_DEMO_SEND_CAP = 10;
 const SAFE_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 
-class EmailConfigurationError extends Error {}
+export class EmailConfigurationError extends Error {}
 
 export type EmailReservationConfig = {
   transport: EmailTransport;
@@ -71,6 +71,27 @@ function validateDispatchConfiguration(
       "EMAIL_DEMO_RECIPIENT is required for seeded demo addresses"
     );
   }
+}
+
+export function prepareEmailDispatch(
+  shop: SendEmailInput["shop"],
+  requestedRecipient: string | null
+): EmailReservationConfig {
+  const config = prepareEmailReservation(requestedRecipient);
+  validateDispatchConfiguration(
+    {shop} as SendEmailInput,
+    {recipient: config.recipient} as EmailDelivery
+  );
+  if (config.transport === "n8n") {
+    getN8nConfig();
+  } else if (!process.env.RESEND_API_KEY?.trim()) {
+    throw new EmailConfigurationError("RESEND_API_KEY is required");
+  }
+  return config;
+}
+
+export function getPublicAppBaseUrl(): string {
+  return getAppBaseUrl();
 }
 
 function getAppBaseUrl(): string {

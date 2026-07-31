@@ -26,8 +26,10 @@ test("English message catalog contains every application namespace", async () =>
 
   assert.deepEqual(Object.keys(messages).sort(), [
     "Admin",
+    "Approval",
     "Booking",
     "Common",
+    "Dashboard",
     "Home",
     "Intake",
     "Jobs",

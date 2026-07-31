@@ -21,6 +21,9 @@ export type TriageDone = {
   estimate_max: number | null;
   needs_inspection: boolean;
   disclaimer: string;
+  visual_findings?: string[];
+  vision_used?: boolean;
+  vision_attempted?: boolean;
 };
 
 export type TriageResult = TriageAsk | TriageDone;

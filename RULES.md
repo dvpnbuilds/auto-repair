@@ -17,3 +17,8 @@
 16. The Resend API key, n8n webhook URL, and webhook shared secret are server-side only; never import them into client components.
 17. All email sends go through the `sendEmail()` abstraction and respect the demo send cap. Never call a provider or the n8n webhook directly from feature code.
 18. All app-owned database objects live in the dedicated `auto_repair` PostgreSQL schema; do not add this app's tables to `public`.
+19. Public unauthenticated state-changing endpoints require a signed, single-use, expiring token verified server-side, plus rate limiting. Tokens are stored hashed, never in plaintext.
+20. Uploaded media is private by default, served only via signed URLs, with server-side size and MIME allowlist enforcement before anything is written to storage.
+21. Money derived from estimate ranges is always labeled estimated. Never present it as revenue.
+22. No new runtime dependencies in v3. Dashboard charts are CSS/SVG.
+23. The vision path uses `OPENROUTER_VISION_MODEL` only. Never route image requests through `OPENROUTER_MODEL`, and never let a vision failure produce an invented finding — degrade to text-only triage.

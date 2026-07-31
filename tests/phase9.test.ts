@@ -25,6 +25,7 @@ test("reset restores two complete regional demos with the US shop active", async
   const result = await seedDatabase(service);
   assert.deepEqual(result, {
     shops: 2,
+    technicians: 8,
     services: 20,
     jobs: 10,
     activeShop: "us",

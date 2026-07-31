@@ -31,6 +31,9 @@ const sampleInput: SendEmailInput = {
     email_sender_name: "Test Auto Service",
     email_sender_address: "service@example.test",
     address: "100 Main Street",
+    tagline: "Straight answers for the road ahead.",
+    phone: "(512) 555-0108",
+    hours: "Mon–Fri, 7:30 AM–6:00 PM",
     is_active: true,
   },
   jobId: "00000000-0000-4000-8000-000000000002",
@@ -48,16 +51,23 @@ const sampleInput: SendEmailInput = {
   },
 };
 
-test("all four email templates render safe HTML and plain text", () => {
+test("all five email templates render safe HTML and plain text", () => {
   const templateIds: EmailTemplateId[] = [
     "status_update",
     "completion_report",
     "reminder",
     "review_request",
+    "extra_work_approval",
   ];
 
   for (const templateId of templateIds) {
-    const rendered = renderEmailTemplate(templateId, sampleInput.payload);
+    const rendered = renderEmailTemplate(templateId, {
+      ...sampleInput.payload,
+      approvalUrl: "https://app.example.test/en/approve/private-token",
+      approvalAmount: "$120",
+      approvalDescription: "Brake inspection follow-up",
+      approvalExpiresAt: "August 3, 2026 at 9:00 AM",
+    });
     assert.ok(rendered.subject.startsWith("Test Auto Service:"));
     assert.match(rendered.html, /Sam &lt;Customer&gt;/);
     assert.doesNotMatch(rendered.html, /Sam <Customer>/);
@@ -270,6 +280,7 @@ test("exported n8n workflows are importable and include delivery plus on-demand 
     "completion_report",
     "reminder",
     "review_request",
+    "extra_work_approval",
   ]) {
     assert.match(renderer.parameters.jsCode, new RegExp(templateId));
   }

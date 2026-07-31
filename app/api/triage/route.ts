@@ -2,6 +2,13 @@ import {NextResponse} from "next/server";
 import {checkApiRateLimit} from "@/lib/api/rate-limit";
 import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {runTriage, type TriageMessage} from "@/lib/openrouter/triage";
+import {runVisionTriage} from "@/lib/openrouter/vision-triage";
+import {loadIntakePhotos} from "@/lib/photos/server";
+import {isValidIntakePhotoToken} from "@/lib/photos/session";
+import {supabaseService} from "@/lib/supabase/server";
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isValidMessages(value: unknown): value is TriageMessage[] {
   return (
@@ -60,13 +67,72 @@ export async function POST(request: Request) {
   const input = body as Record<string, unknown>;
   if (
     !isValidMessages(input.messages) ||
-    (input.forceFinal !== undefined && typeof input.forceFinal !== "boolean")
+    typeof input.sessionId !== "string" ||
+    !UUID_PATTERN.test(input.sessionId) ||
+    typeof input.shopId !== "string" ||
+    !UUID_PATTERN.test(input.shopId) ||
+    (input.forceFinal !== undefined && typeof input.forceFinal !== "boolean") ||
+    (input.intakeToken !== undefined &&
+      !isValidIntakePhotoToken(input.intakeToken as string)) ||
+    (input.photoIds !== undefined &&
+      (!Array.isArray(input.photoIds) ||
+        input.photoIds.length < 1 ||
+        input.photoIds.length > 3 ||
+        input.photoIds.some(
+          (id) => typeof id !== "string" || !UUID_PATTERN.test(id)
+        ))) ||
+    ((input.intakeToken === undefined) !== (input.photoIds === undefined))
   ) {
     return NextResponse.json({error: "Invalid triage messages"}, {status: 400});
   }
 
   try {
-    const result = await runTriage(input.messages, input.forceFinal === true);
+    const {error: sessionStartError} = await supabaseService.rpc(
+      "record_autoshop_intake_session",
+      {
+        p_session_id: input.sessionId,
+        p_shop_id: input.shopId,
+        p_completed: false,
+      }
+    );
+    if (sessionStartError) throw sessionStartError;
+
+    let result;
+    if (
+      typeof input.intakeToken === "string" &&
+      Array.isArray(input.photoIds)
+    ) {
+      let photos;
+      try {
+        photos = await loadIntakePhotos(
+          input.intakeToken,
+          input.photoIds as string[]
+        );
+      } catch {
+        return NextResponse.json(
+          {error: "Invalid intake photo references"},
+          {status: 400}
+        );
+      }
+      result = await runVisionTriage(
+        input.messages,
+        photos,
+        input.forceFinal === true
+      );
+    } else {
+      result = await runTriage(input.messages, input.forceFinal === true);
+    }
+    if (result.status === "done") {
+      const {error: sessionCompleteError} = await supabaseService.rpc(
+        "record_autoshop_intake_session",
+        {
+          p_session_id: input.sessionId,
+          p_shop_id: input.shopId,
+          p_completed: true,
+        }
+      );
+      if (sessionCompleteError) throw sessionCompleteError;
+    }
     return NextResponse.json(result);
   } catch (error) {
     console.error("Triage failed:", error);

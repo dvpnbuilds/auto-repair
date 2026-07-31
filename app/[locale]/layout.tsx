@@ -49,10 +49,12 @@ export default async function RootLayout({
   setRequestLocale(locale);
   const messages = await getMessages();
   const shop = await getActiveShop();
+  const phoneHref = `tel:${shop.phone.replace(/[^\d+]/g, "")}`;
 
   return (
     <html
       lang={locale}
+      data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
@@ -60,9 +62,14 @@ export default async function RootLayout({
           <SiteHeader shopName={shop.name} />
           <main className="flex-1">{children}</main>
           <footer className="border-t border-[#dce5e3] bg-white/70">
-            <div className="mx-auto flex max-w-[1440px] flex-col gap-1 px-4 py-6 text-xs text-[#718187] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-6 text-xs text-[#718187] sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <span>{shop.name}</span>
-              <span>{shop.address}</span>
+              <div className="flex flex-col gap-1 sm:items-end">
+                <span>{shop.address}</span>
+                <a className="hover:text-[#173744] hover:underline" href={phoneHref}>
+                  {shop.phone}
+                </a>
+              </div>
             </div>
           </footer>
         </NextIntlClientProvider>

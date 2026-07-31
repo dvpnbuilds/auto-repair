@@ -13,6 +13,7 @@ type Job = {
   probable_issue: string | null;
   status: JobStatus;
   scheduled_at: string | null;
+  technician_id: string | null;
 };
 
 export type Message = {
@@ -31,6 +32,41 @@ type ShopOption = {
   country: string;
   currency: string;
   is_active: boolean;
+};
+
+type Technician = {
+  id: string;
+  name: string;
+};
+
+type Service = {
+  id: string;
+  name: string;
+  price_min: number;
+  price_max: number;
+  priceLabel: string;
+};
+
+type Approval = {
+  id: string;
+  job_id: string;
+  description: string;
+  amount: number;
+  status: "pending" | "approved" | "declined" | "expired";
+  expires_at: string;
+};
+
+type ApprovalDraft = {
+  serviceId: string;
+  amount: string;
+  description: string;
+  idempotencyKey: string;
+};
+
+type JobPhoto = {
+  id: string;
+  job_id: string;
+  signedUrl: string;
 };
 
 const DRAFT_KINDS: MessageKind[] = [
@@ -67,11 +103,19 @@ export default function AdminBoard({
   messages: initialMessages,
   activeShopKey,
   shops,
+  technicians,
+  services,
+  approvals: initialApprovals,
+  jobPhotos,
 }: {
   jobs: Job[];
   messages: Message[];
   activeShopKey: string;
   shops: ShopOption[];
+  technicians: Technician[];
+  services: Service[];
+  approvals: Approval[];
+  jobPhotos: JobPhoto[];
 }) {
   const t = useTranslations("Admin");
   const common = useTranslations("Common");
@@ -79,6 +123,17 @@ export default function AdminBoard({
   const [messages, setMessages] = useState(initialMessages);
   const [busy, setBusy] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [technicianFilter, setTechnicianFilter] = useState("all");
+  const [approvals, setApprovals] = useState(initialApprovals);
+  const [approvalDrafts, setApprovalDrafts] = useState<
+    Record<string, ApprovalDraft>
+  >({});
+
+  const filteredJobs = jobs.filter((job) => {
+    if (technicianFilter === "all") return true;
+    if (technicianFilter === "unassigned") return job.technician_id === null;
+    return job.technician_id === technicianFilter;
+  });
 
   function statusLabel(status: JobStatus) {
     return common(`status.${status}`);
@@ -86,6 +141,69 @@ export default function AdminBoard({
 
   function kindLabel(kind: MessageKind) {
     return common(`messageKind.${kind}`);
+  }
+
+  function approvalDraft(jobId: string): ApprovalDraft {
+    const service = services[0];
+    return (
+      approvalDrafts[jobId] ?? {
+        serviceId: service?.id ?? "",
+        amount: service ? String(service.price_min) : "",
+        description: "",
+        idempotencyKey: crypto.randomUUID(),
+      }
+    );
+  }
+
+  function updateApprovalDraft(
+    jobId: string,
+    update: Partial<ApprovalDraft>
+  ) {
+    setApprovalDrafts((previous) => ({
+      ...previous,
+      [jobId]: {...approvalDraft(jobId), ...update},
+    }));
+  }
+
+  async function requestApproval(job: Job) {
+    const draft = approvalDraft(job.id);
+    const amount = Number(draft.amount);
+    if (!draft.serviceId || !draft.description.trim() || !Number.isInteger(amount)) {
+      alert(t("approvalRequiredError"));
+      return;
+    }
+    const busyKey = `approval:${job.id}`;
+    setBusy(busyKey);
+    try {
+      const res = await fetch(`/api/admin/jobs/${job.id}/approvals`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          idempotencyKey: draft.idempotencyKey,
+          serviceId: draft.serviceId,
+          description: draft.description.trim(),
+          amount,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setApprovals((previous) => [data.approval, ...previous]);
+      if (data.message) {
+        upsertMessage({
+          ...data.message,
+          delivery_status: data.email?.delivery?.status,
+        });
+      }
+      setApprovalDrafts((previous) => {
+        const copy = {...previous};
+        delete copy[job.id];
+        return copy;
+      });
+    } catch (error) {
+      alert(error instanceof Error && error.message ? error.message : t("approvalError"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function resetDemoData() {
@@ -152,6 +270,29 @@ export default function AdminBoard({
       }
     } catch {
       alert(t("advanceError"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function assignTechnician(job: Job, technicianId: string) {
+    const busyKey = `assign:${job.id}`;
+    setBusy(busyKey);
+    try {
+      const res = await fetch(`/api/admin/jobs/${job.id}/technician`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          technicianId: technicianId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error();
+      setJobs((previous) =>
+        previous.map((item) => (item.id === job.id ? data.job : item))
+      );
+    } catch {
+      alert(t("assignmentError"));
     } finally {
       setBusy(null);
     }
@@ -271,6 +412,42 @@ export default function AdminBoard({
         </div>
       </section>
 
+      <section
+        aria-labelledby="technician-filter-title"
+        className="surface-flat mb-6 flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-5"
+      >
+        <div>
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#087f78]">
+            {t("workloadEyebrow")}
+          </p>
+          <h2
+            id="technician-filter-title"
+            className="text-lg font-bold tracking-[-0.025em] text-[#173744]"
+          >
+            {t("technicianFilterTitle")}
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-[#60727a]">
+            {t("technicianFilterHint")}
+          </p>
+        </div>
+        <label className="field-label w-full sm:max-w-xs">
+          {t("filterByTechnician")}
+          <select
+            value={technicianFilter}
+            onChange={(event) => setTechnicianFilter(event.target.value)}
+            className="field-control"
+          >
+            <option value="all">{t("allTechnicians")}</option>
+            <option value="unassigned">{t("unassigned")}</option>
+            {technicians.map((technician) => (
+              <option key={technician.id} value={technician.id}>
+                {technician.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {STATUS_ORDER.map((status) => (
           <section key={status} className="flex min-w-0 flex-col gap-3">
@@ -280,29 +457,48 @@ export default function AdminBoard({
                 {statusLabel(status)}
               </h2>
               <span className="grid min-w-6 place-items-center rounded-md bg-[#edf2f1] px-1.5 py-0.5 text-xs font-bold text-[#60727a]">
-                {jobs.filter((job) => job.status === status).length}
+                {filteredJobs.filter((job) => job.status === status).length}
               </span>
             </div>
-            {jobs.filter((job) => job.status === status).length === 0 && (
+            {filteredJobs.filter((job) => job.status === status).length ===
+              0 && (
               <p className="rounded-xl border border-dashed border-[#cfdcda] bg-white/35 px-3 py-8 text-center text-xs text-[#829196]">
                 {t("noJobs")}
               </p>
             )}
-            {jobs
+            {filteredJobs
               .filter((job) => job.status === status)
               .map((job) => {
                 const jobMessages = messages.filter((message) => message.job_id === job.id);
+                const pendingApproval = approvals.find(
+                  (approval) =>
+                    approval.job_id === job.id && approval.status === "pending"
+                );
+                const photosForJob = jobPhotos.filter(
+                  (photo) => photo.job_id === job.id
+                );
                 const next = nextStatus(job.status);
+                const canRequestApproval =
+                  job.status === "in_progress" || job.status === "waiting_parts";
+                const approvalForm = approvalDraft(job.id);
                 return (
                   <div
                     key={job.id}
+                    data-testid={`job-card-${job.id}`}
                     className="flex min-w-0 flex-col gap-3 rounded-xl border border-[#dce5e3] bg-white p-4 text-sm shadow-[0_7px_20px_rgba(28,63,72,0.05)]"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="font-bold text-[#173744]">{job.customer_name}</div>
-                      <span className={`rounded-md px-2 py-1 text-[0.65rem] font-bold ${STATUS_STYLES[status].badge}`}>
-                        {statusLabel(status)}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`rounded-md px-2 py-1 text-[0.65rem] font-bold ${STATUS_STYLES[status].badge}`}>
+                          {statusLabel(status)}
+                        </span>
+                        {pendingApproval && (
+                          <span className="rounded-md bg-[#fff0cc] px-2 py-1 text-[0.65rem] font-bold text-[#805613]">
+                            {t("approvalPending")}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="break-words text-[#60727a]">
                       {job.vehicle} · {job.plate_number}
@@ -313,16 +509,146 @@ export default function AdminBoard({
                       </div>
                     )}
 
+                    {photosForJob.length > 0 && (
+                      <div>
+                        <p className="mb-2 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#718187]">
+                          {t("intakePhotos")}
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {photosForJob.map((photo, index) => (
+                            <a
+                              key={photo.id}
+                              href={photo.signedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="aspect-square overflow-hidden rounded-lg border border-[#dce5e3] bg-[#edf2f1] focus-visible:outline"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={photo.signedUrl}
+                                alt={t("jobPhotoAlt", {
+                                  vehicle: job.vehicle,
+                                  number: index + 1,
+                                })}
+                                width={160}
+                                height={160}
+                                className="size-full object-cover transition-transform hover:scale-[1.03]"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[0.68rem] leading-5 text-[#718187]">
+                          {t("photoLinkHint")}
+                        </p>
+                      </div>
+                    )}
+
+                    <label className="field-label !gap-1 !text-xs">
+                      {t("assignedTechnician")}
+                      <select
+                        value={job.technician_id ?? ""}
+                        onChange={(event) =>
+                          assignTechnician(job, event.target.value)
+                        }
+                        disabled={busy === `assign:${job.id}`}
+                        className="field-control !min-h-10 !px-2.5 !py-1.5 !text-xs"
+                      >
+                        <option value="">{t("unassigned")}</option>
+                        {technicians.map((technician) => (
+                          <option key={technician.id} value={technician.id}>
+                            {technician.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
                     {next && (
                       <button
                         onClick={() => advance(job)}
-                        disabled={busy === job.id}
+                        disabled={busy === job.id || Boolean(pendingApproval)}
                         className="button-primary !min-h-9 w-full !px-3 !py-1.5 !text-xs"
                       >
                         {busy === job.id
                           ? t("moving")
                           : t("advanceTo", {status: statusLabel(next)})}
                       </button>
+                    )}
+
+                    {canRequestApproval && !pendingApproval && services.length > 0 && (
+                      <details
+                        data-testid={`approval-form-${job.id}`}
+                        className="rounded-xl border border-[#d4e3df] bg-[#f7fbfa] p-3"
+                      >
+                        <summary className="cursor-pointer text-xs font-bold text-[#087f78]">
+                          {t("requestExtraWork")}
+                        </summary>
+                        <div className="mt-3 space-y-3">
+                          <label className="field-label !text-xs">
+                            {t("approvalService")}
+                            <select
+                              value={approvalForm.serviceId}
+                              onChange={(event) => {
+                                const service = services.find(
+                                  (item) => item.id === event.target.value
+                                );
+                                updateApprovalDraft(job.id, {
+                                  serviceId: event.target.value,
+                                  amount: service ? String(service.price_min) : "",
+                                });
+                              }}
+                              className="field-control !min-h-10 !text-xs"
+                            >
+                              {services.map((service) => (
+                                <option key={service.id} value={service.id}>
+                                  {service.name} · {service.priceLabel}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field-label !text-xs">
+                            {t("approvalAmount")}
+                            <input
+                              type="number"
+                              min={services.find((item) => item.id === approvalForm.serviceId)?.price_min}
+                              max={services.find((item) => item.id === approvalForm.serviceId)?.price_max}
+                              step="1"
+                              value={approvalForm.amount}
+                              onChange={(event) =>
+                                updateApprovalDraft(job.id, {amount: event.target.value})
+                              }
+                              className="field-control !min-h-10 !text-xs"
+                            />
+                          </label>
+                          <label className="field-label !text-xs">
+                            {t("technicianFinding")}
+                            <textarea
+                              value={approvalForm.description}
+                              maxLength={1000}
+                              rows={3}
+                              placeholder={t("technicianFindingPlaceholder")}
+                              onChange={(event) =>
+                                updateApprovalDraft(job.id, {
+                                  description: event.target.value,
+                                })
+                              }
+                              className="field-control !min-h-20 !text-xs"
+                            />
+                          </label>
+                          <p className="text-[0.7rem] leading-5 text-[#718187]">
+                            {t("approvalEmailHint")}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => requestApproval(job)}
+                            disabled={busy === `approval:${job.id}`}
+                            className="button-primary w-full !min-h-10 !text-xs"
+                          >
+                            {busy === `approval:${job.id}`
+                              ? t("preparingApproval")
+                              : t("sendApprovalRequest")}
+                          </button>
+                        </div>
+                      </details>
                     )}
 
                     <div className="flex flex-wrap gap-2">

@@ -34,7 +34,7 @@ test("booking is one server-authoritative transaction", async () => {
     migration.indexOf("create or replace function transition_autoshop_job")
   );
 
-  assert.match(route, /\.rpc\("create_autoshop_booking"/);
+  assert.match(route, /\.rpc\("create_autoshop_booking_with_photos"/);
   assert.doesNotMatch(route, /\.from\("autoshop_jobs"\)|\.insert\(/);
   assert.doesNotMatch(route, /estimate_min|estimate_max|scheduled_at/);
   assert.match(form, /shop_id: shop\.id/);
@@ -82,9 +82,13 @@ test("status transition, history, message, and outbox are atomic and replay-safe
     migration.indexOf("create or replace function complete_autoshop_email_delivery")
   );
 
+  const draftIndex = route.indexOf("draftMessage(");
+  const transitionRpcIndex = route.search(
+    /\.rpc\(\s*"transition_autoshop_job"/
+  );
+  assert.ok(draftIndex >= 0 && transitionRpcIndex >= 0);
   assert.ok(
-    route.indexOf("draftMessage(") <
-      route.indexOf('.rpc(\n    "transition_autoshop_job"'),
+    draftIndex < transitionRpcIndex,
     "AI drafting must finish before the transactional mutation"
   );
   assert.match(route, /expectedStatus/);

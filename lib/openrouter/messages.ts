@@ -2,7 +2,12 @@ import { callWithRetry } from "@/lib/callWithRetry";
 import { formatDateTime } from "@/lib/formatting";
 import { getActiveShop, type ShopConfig } from "@/lib/shop-config";
 
-export type MessageKind = "status_update" | "completion_report" | "reminder" | "review_request";
+export type MessageKind =
+  | "status_update"
+  | "completion_report"
+  | "reminder"
+  | "review_request"
+  | "extra_work_approval";
 
 export type DraftJob = {
   customer_name: string;
@@ -33,6 +38,8 @@ Respond with ONLY a JSON object: {"body":"<message text>"}. Keep it under 3 sent
       return `${base}\nDraft a booking reminder for the customer's upcoming slot${job.scheduled_at ? ` on ${formatDateTime(job.scheduled_at, shop)}` : ""}.`;
     case "review_request":
       return `${base}\nThe repair is complete. Draft a friendly message asking the customer to leave a review.`;
+    case "extra_work_approval":
+      return `${base}\nDraft a brief introduction asking the customer to review additional work. Do not state a price.`;
   }
 }
 

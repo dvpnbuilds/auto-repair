@@ -18,6 +18,10 @@ export type EmailTemplatePayload = {
   messageBody: string;
   status?: string;
   scheduledAt?: string;
+  approvalUrl?: string;
+  approvalAmount?: string;
+  approvalDescription?: string;
+  approvalExpiresAt?: string;
 };
 
 export type EmailDelivery = {

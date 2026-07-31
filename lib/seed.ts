@@ -1,4 +1,5 @@
 import type {AppSupabaseClient} from "@/lib/supabase/schema";
+import {createHash, randomUUID} from "node:crypto";
 
 export type ShopKey = "us" | "ph";
 
@@ -8,6 +9,10 @@ type SeedService = {
   price_min: number;
   price_max: number;
   duration_minutes: number;
+};
+
+type SeedTechnician = {
+  name: string;
 };
 
 type SeedJob = {
@@ -24,6 +29,8 @@ type SeedJob = {
   estimate_max: number;
   status: "booked" | "in_progress" | "waiting_parts" | "ready" | "done";
   scheduled_in_hours: number | null;
+  technicianName: string;
+  created_days_ago: number;
 };
 
 export const SEED_SHOPS = [
@@ -38,6 +45,9 @@ export const SEED_SHOPS = [
     email_sender_name: "Northstar Auto Service",
     email_sender_address: "service@northstar-auto.example",
     address: "1840 Westfield Avenue, Austin, TX",
+    tagline: "Straight answers for the road ahead.",
+    phone: "(512) 555-0108",
+    hours: "Mon–Fri, 7:30 AM–6:00 PM · Sat, 8:00 AM–2:00 PM",
   },
   {
     shop_key: "ph" as const,
@@ -50,6 +60,9 @@ export const SEED_SHOPS = [
     email_sender_name: "RapidFix Auto Care",
     email_sender_address: "service@rapidfix-auto.example",
     address: "Quezon City, Metro Manila",
+    tagline: "Clear car care, from first check to final update.",
+    phone: "+63 2 8555 0148",
+    hours: "Mon–Sat, 8:00 AM–6:00 PM",
   },
 ];
 
@@ -84,6 +97,24 @@ export const SEED_SERVICES_BY_SHOP: Record<ShopKey, SeedService[]> = {
   ph: PH_SERVICES,
 };
 
+export const SEED_TECHNICIANS_BY_SHOP: Record<
+  ShopKey,
+  SeedTechnician[]
+> = {
+  us: [
+    {name: "Jordan Lee"},
+    {name: "Marcus Reed"},
+    {name: "Elena Torres"},
+    {name: "Caleb Morgan"},
+  ],
+  ph: [
+    {name: "Miguel Santos"},
+    {name: "Carlo Reyes"},
+    {name: "Bea Navarro"},
+    {name: "Jun Mendoza"},
+  ],
+};
+
 const US_JOBS: SeedJob[] = [
   {
     customer_name: "Mason Brooks",
@@ -99,6 +130,8 @@ const US_JOBS: SeedJob[] = [
     estimate_max: 410,
     status: "in_progress",
     scheduled_in_hours: null,
+    technicianName: "Jordan Lee",
+    created_days_ago: 1,
   },
   {
     customer_name: "Olivia Carter",
@@ -114,6 +147,8 @@ const US_JOBS: SeedJob[] = [
     estimate_max: 460,
     status: "waiting_parts",
     scheduled_in_hours: null,
+    technicianName: "Elena Torres",
+    created_days_ago: 5,
   },
   {
     customer_name: "Ethan Ramirez",
@@ -129,6 +164,8 @@ const US_JOBS: SeedJob[] = [
     estimate_max: 480,
     status: "ready",
     scheduled_in_hours: null,
+    technicianName: "Marcus Reed",
+    created_days_ago: 12,
   },
   {
     customer_name: "Sophia Bennett",
@@ -144,6 +181,8 @@ const US_JOBS: SeedJob[] = [
     estimate_max: 210,
     status: "booked",
     scheduled_in_hours: 20,
+    technicianName: "Caleb Morgan",
+    created_days_ago: 35,
   },
   {
     customer_name: "Noah Williams",
@@ -159,6 +198,8 @@ const US_JOBS: SeedJob[] = [
     estimate_max: 2200,
     status: "done",
     scheduled_in_hours: null,
+    technicianName: "Jordan Lee",
+    created_days_ago: 70,
   },
 ];
 
@@ -177,6 +218,8 @@ const PH_JOBS: SeedJob[] = [
     estimate_max: 3500,
     status: "in_progress",
     scheduled_in_hours: null,
+    technicianName: "Miguel Santos",
+    created_days_ago: 10,
   },
   {
     customer_name: "Ana Reyes",
@@ -192,6 +235,8 @@ const PH_JOBS: SeedJob[] = [
     estimate_max: 6000,
     status: "waiting_parts",
     scheduled_in_hours: null,
+    technicianName: "Bea Navarro",
+    created_days_ago: 18,
   },
   {
     customer_name: "Marco Dela Cruz",
@@ -207,6 +252,8 @@ const PH_JOBS: SeedJob[] = [
     estimate_max: 6500,
     status: "ready",
     scheduled_in_hours: null,
+    technicianName: "Carlo Reyes",
+    created_days_ago: 26,
   },
   {
     customer_name: "Liza Fernandez",
@@ -222,6 +269,8 @@ const PH_JOBS: SeedJob[] = [
     estimate_max: 1500,
     status: "booked",
     scheduled_in_hours: 20,
+    technicianName: "Jun Mendoza",
+    created_days_ago: 40,
   },
   {
     customer_name: "Paolo Santos",
@@ -237,6 +286,8 @@ const PH_JOBS: SeedJob[] = [
     estimate_max: 8000,
     status: "done",
     scheduled_in_hours: null,
+    technicianName: "Miguel Santos",
+    created_days_ago: 80,
   },
 ];
 
@@ -269,6 +320,69 @@ export async function seedDatabase(
     .select();
   if (shopsError) throw shopsError;
 
+  const {data: existingJobs, error: existingJobsError} = await supabase
+    .from("autoshop_jobs")
+    .select("shop_id, plate_number, technician_id");
+  if (existingJobsError) throw existingJobsError;
+
+  const technicianRows =
+    shops?.flatMap((shop) =>
+      SEED_TECHNICIANS_BY_SHOP[shop.shop_key as ShopKey].map(
+        (technician) => ({
+          ...technician,
+          shop_id: shop.id,
+          is_active: true,
+        })
+      )
+    ) ?? [];
+  const {data: technicians, error: techniciansError} = await supabase
+    .from("autoshop_technicians")
+    .upsert(technicianRows, {onConflict: "shop_id,name"})
+    .select();
+  if (techniciansError) throw techniciansError;
+
+  const currentTechnicianIds = new Set(
+    (technicians ?? []).map((technician) => technician.id)
+  );
+  const preservedAssignments = new Map(
+    (existingJobs ?? [])
+      .filter(
+        (job) =>
+          job.technician_id &&
+          currentTechnicianIds.has(job.technician_id)
+      )
+      .map((job) => [
+        `${job.shop_id}:${job.plate_number}`,
+        job.technician_id as string,
+      ])
+  );
+
+  const {data: intakePhotos, error: intakePhotosError} = await supabase
+    .from("autoshop_intake_photos")
+    .select("storage_path");
+  if (intakePhotosError) throw intakePhotosError;
+  const photoPaths = (intakePhotos ?? []).map((photo) => photo.storage_path);
+  if (photoPaths.length > 0) {
+    const photoBucket =
+      process.env.INTAKE_PHOTO_BUCKET?.trim() ||
+      "auto-repair-intake-photos";
+    const {error: storageDeleteError} = await supabase.storage
+      .from(photoBucket)
+      .remove(photoPaths);
+    if (storageDeleteError) throw storageDeleteError;
+  }
+  const {error: deletePhotoRowsError} = await supabase
+    .from("autoshop_intake_photos")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  if (deletePhotoRowsError) throw deletePhotoRowsError;
+
+  const {error: deleteIntakeSessionsError} = await supabase
+    .from("autoshop_intake_sessions")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  if (deleteIntakeSessionsError) throw deleteIntakeSessionsError;
+
   const {error: deleteJobsError} = await supabase
     .from("autoshop_jobs")
     .delete()
@@ -294,12 +408,25 @@ export async function seedDatabase(
   if (servicesError) throw servicesError;
 
   let jobsInserted = 0;
+  const jobsByShop = new Map<string, Array<{id: string; created_at: string}>>();
   for (const shop of shops ?? []) {
     const shopKey = shop.shop_key as ShopKey;
     for (const job of SEED_JOBS_BY_SHOP[shopKey]) {
       const service = services?.find(
         (item) => item.shop_id === shop.id && item.name === job.serviceName
       );
+      const defaultTechnician = technicians?.find(
+        (technician) =>
+          technician.shop_id === shop.id &&
+          technician.name === job.technicianName
+      );
+      const technicianId =
+        preservedAssignments.get(`${shop.id}:${job.plate_number}`) ??
+        defaultTechnician?.id ??
+        null;
+      const createdAt = new Date(
+        Date.now() - job.created_days_ago * 24 * 60 * 60 * 1000
+      ).toISOString();
       const {data: insertedJob, error: jobError} = await supabase
         .from("autoshop_jobs")
         .insert({
@@ -310,6 +437,7 @@ export async function seedDatabase(
           customer_email: job.customer_email,
           vehicle: job.vehicle,
           service_id: service?.id ?? null,
+          technician_id: technicianId,
           issue_description: job.issue_description,
           probable_issue: job.probable_issue,
           urgency: job.urgency,
@@ -322,6 +450,7 @@ export async function seedDatabase(
               : new Date(
                   Date.now() + job.scheduled_in_hours * 60 * 60 * 1000
                 ).toISOString(),
+          created_at: createdAt,
         })
         .select()
         .single();
@@ -333,14 +462,98 @@ export async function seedDatabase(
           job_id: insertedJob.id,
           status: job.status,
           note: "Seeded demo state",
+          created_at: createdAt,
         });
       if (historyError) throw historyError;
+      const shopJobs = jobsByShop.get(shop.id) ?? [];
+      shopJobs.push({id: insertedJob.id, created_at: createdAt});
+      jobsByShop.set(shop.id, shopJobs);
       jobsInserted += 1;
+    }
+  }
+
+  for (const shop of shops ?? []) {
+    const shopJobs = jobsByShop.get(shop.id) ?? [];
+    const bookedSessions = shopJobs.map((job) => ({
+      id: randomUUID(),
+      shop_id: shop.id,
+      job_id: job.id,
+      started_at: job.created_at,
+      completed_at: job.created_at,
+      booked_at: job.created_at,
+    }));
+    const extraDays = shop.shop_key === "us" ? [2, 20, 60] : [15, 50];
+    const unbookedSessions = extraDays.map((daysAgo) => {
+      const timestamp = new Date(
+        Date.now() - daysAgo * 24 * 60 * 60 * 1000
+      ).toISOString();
+      return {
+        id: randomUUID(),
+        shop_id: shop.id,
+        job_id: null,
+        started_at: timestamp,
+        completed_at: timestamp,
+        booked_at: null,
+      };
+    });
+    const {error: intakeSessionsError} = await supabase
+      .from("autoshop_intake_sessions")
+      .insert([...bookedSessions, ...unbookedSessions]);
+    if (intakeSessionsError) throw intakeSessionsError;
+
+    for (const [index, job] of shopJobs.slice(0, 2).entries()) {
+      const decidedAt = new Date(
+        new Date(job.created_at).getTime() + 60 * 60 * 1000
+      ).toISOString();
+      const approvalId = randomUUID();
+      const {error: approvalError} = await supabase
+        .from("autoshop_approval_requests")
+        .insert({
+          id: approvalId,
+          shop_id: shop.id,
+          job_id: job.id,
+          message_id: null,
+          description: "Additional repair found during inspection",
+          line_items: [{name: "Additional repair", amount: index === 0 ? 180 : 120}],
+          amount: index === 0 ? 180 : 120,
+          customer_explanation:
+            "The technician found an additional item that should be addressed.",
+          status: index === 0 ? "approved" : "declined",
+          token_hash: createHash("sha256")
+            .update(`seed-approval:${approvalId}`)
+            .digest("hex"),
+          expires_at: new Date(
+            new Date(decidedAt).getTime() + 24 * 60 * 60 * 1000
+          ).toISOString(),
+          decided_at: decidedAt,
+          created_at: job.created_at,
+        });
+      if (approvalError) throw approvalError;
+    }
+
+    const reminderJob = shopJobs[0];
+    if (reminderJob) {
+      const {error: reminderError} = await supabase
+        .from("autoshop_email_deliveries")
+        .insert({
+          shop_id: shop.id,
+          job_id: reminderJob.id,
+          message_id: null,
+          template_id: "reminder",
+          transport: "resend",
+          recipient: "demo-customer@example.com",
+          status: "sent",
+          provider_message_id: `seed-reminder-${reminderJob.id}`,
+          created_at: reminderJob.created_at,
+          sent_at: reminderJob.created_at,
+        });
+      if (reminderError) throw reminderError;
     }
   }
 
   return {
     shops: shops?.length ?? 0,
+    technicians: technicians?.length ?? 0,
     services: services?.length ?? 0,
     jobs: jobsInserted,
     activeShop: requestedActiveShop,

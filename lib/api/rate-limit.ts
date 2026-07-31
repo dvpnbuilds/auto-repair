@@ -3,7 +3,12 @@ import {createHmac} from "node:crypto";
 import {supabaseService} from "@/lib/supabase/server";
 
 type RateLimitOptions = {
-  bucket: "admin-login" | "booking" | "triage";
+  bucket:
+    | "admin-login"
+    | "booking"
+    | "triage"
+    | "approval-decision"
+    | "photo-upload";
   limit: number;
   windowSeconds: number;
 };

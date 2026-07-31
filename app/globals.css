@@ -41,6 +41,66 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.home-hero {
+  position: relative;
+  overflow: clip;
+}
+
+.home-hero::before {
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: min(42rem, 58vw);
+  height: min(42rem, 58vw);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(107, 194, 181, 0.13), transparent 68%);
+  content: "";
+  pointer-events: none;
+  transform: translate(18%, -28%);
+}
+
+.service-desk {
+  position: relative;
+  min-height: 34rem;
+  overflow: hidden;
+  border: 1px solid rgba(23, 55, 68, 0.42);
+  border-radius: 2rem;
+  background:
+    linear-gradient(145deg, rgba(34, 86, 96, 0.96), rgba(13, 41, 52, 0.99)),
+    var(--navy);
+  box-shadow: 0 32px 75px rgba(22, 55, 65, 0.18);
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.service-desk::after {
+  position: absolute;
+  right: -5rem;
+  bottom: -7rem;
+  width: 18rem;
+  height: 18rem;
+  border: 2.5rem solid rgba(255, 255, 255, 0.045);
+  border-radius: 50%;
+  content: "";
+}
+
+.service-desk-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.7) 1px, transparent 1px);
+  background-size: 2rem 2rem;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.home-eyebrow-light {
+  color: #a8d9d2;
+}
+
+.home-eyebrow-light::before {
+  background: #f3ad62;
+}
+
 ::selection {
   background: #bfe8e1;
   color: var(--navy);
@@ -294,6 +354,11 @@ button:focus-visible {
 
   .page-title {
     font-size: clamp(2.5rem, 13vw, 3.8rem);
+  }
+
+  .service-desk {
+    min-height: 31rem;
+    border-radius: 1.5rem;
   }
 }
 

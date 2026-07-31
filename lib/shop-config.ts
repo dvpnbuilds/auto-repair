@@ -13,11 +13,14 @@ export type ShopConfig = {
   email_sender_name: string;
   email_sender_address: string;
   address: string;
+  tagline: string;
+  phone: string;
+  hours: string;
   is_active: boolean;
 };
 
 const SHOP_COLUMNS =
-  "id, shop_key, name, country, locale, currency, timezone, language, email_sender_name, email_sender_address, address, is_active";
+  "id, shop_key, name, country, locale, currency, timezone, language, email_sender_name, email_sender_address, address, tagline, phone, hours, is_active";
 
 export async function getActiveShop(
   client: AppSupabaseClient = supabaseAnon

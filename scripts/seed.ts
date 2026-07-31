@@ -20,9 +20,9 @@ if (shopArgument && shopArgument !== "us" && shopArgument !== "ph") {
 const requestedShop = shopArgument as ShopKey | undefined;
 
 seedDatabase(supabase, requestedShop)
-  .then(({ shops, services, jobs, activeShop }) => {
+  .then(({shops, technicians, services, jobs, activeShop}) => {
     console.log(
-      `Seeded ${shops} shops, ${services} services, and ${jobs} jobs. Active shop: ${activeShop}.`
+      `Seeded ${shops} shops, ${technicians} technicians, ${services} services, and ${jobs} jobs. Active shop: ${activeShop}.`
     );
     process.exit(0);
   })

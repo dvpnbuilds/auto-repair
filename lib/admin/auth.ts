@@ -1,21 +1,21 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "crypto";
+import {timingSafeEqual} from "crypto";
 import { cookies } from "next/headers";
+import {
+  ADMIN_SESSION_LIFETIME_SECONDS,
+  createAdminSessionToken,
+  verifyAdminSessionToken,
+} from "@/lib/admin/session-token";
 
 const COOKIE_NAME = "autoshop_admin_v2";
 const LEGACY_COOKIE_NAME = "autoshop_admin";
-const SESSION_VERSION = "v2";
 
-function expectedCookieValue(): string {
+function sessionSecret(): string {
   const secret = process.env.ADMIN_SESSION_SECRET;
   if (!secret || secret.length < 32) {
     throw new Error("ADMIN_SESSION_SECRET must contain at least 32 characters");
   }
-
-  const signature = createHmac("sha256", secret)
-    .update(`autoshop-admin-session:${SESSION_VERSION}`)
-    .digest("base64url");
-  return `${SESSION_VERSION}.${signature}`;
+  return secret;
 }
 
 export function verifyPasscode(passcode: string): boolean {
@@ -32,24 +32,18 @@ export function verifyPasscode(passcode: string): boolean {
 
 function matchesExpectedCookie(value: string | undefined): boolean {
   if (!value) return false;
-  const expected = expectedCookieValue();
-  const valueBuffer = Buffer.from(value);
-  const expectedBuffer = Buffer.from(expected);
-  return (
-    valueBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(valueBuffer, expectedBuffer)
-  );
+  return verifyAdminSessionToken(value, sessionSecret());
 }
 
 export async function setAdminCookie() {
   const store = await cookies();
   store.delete(LEGACY_COOKIE_NAME);
-  store.set(COOKIE_NAME, expectedCookieValue(), {
+  store.set(COOKIE_NAME, createAdminSessionToken(sessionSecret()), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: ADMIN_SESSION_LIFETIME_SECONDS,
   });
 }
 

@@ -3,6 +3,13 @@
 The production project originally received V2 SQL through the Dashboard, so
 those changes existed in PostgreSQL without Supabase migration history.
 
+Status: completed on 2026-07-31 for project `lhpyghawypoqogerkysa`. A read-only
+schema dump matched the checks below before versions `20260730080000` through
+`20260730140000` were recorded as applied. A subsequent dry run listed only
+`20260731120000` through `20260731170000` as pending. Do not repeat the repair
+steps unless restoring a fresh production database from the same historical
+state.
+
 On 2026-07-31, the production project was inspected before any filename change:
 
 ```sql

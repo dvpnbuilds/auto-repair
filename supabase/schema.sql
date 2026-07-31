@@ -15,6 +15,15 @@ create table if not exists autoshop_shops (
   email_sender_name text not null,
   email_sender_address text not null,
   address text not null,
+  tagline text not null check (
+    char_length(trim(tagline)) between 1 and 160
+  ),
+  phone text not null check (
+    char_length(trim(phone)) between 1 and 40
+  ),
+  hours text not null check (
+    char_length(trim(hours)) between 1 and 160
+  ),
   is_active boolean not null default false
 );
 
@@ -72,6 +81,20 @@ create table if not exists autoshop_services (
   unique (shop_id, name)
 );
 
+create table if not exists autoshop_technicians (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references autoshop_shops(id) on delete cascade,
+  name text not null check (
+    char_length(trim(name)) between 1 and 100
+  ),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (shop_id, name)
+);
+
+create unique index if not exists autoshop_technicians_id_shop_key
+  on autoshop_technicians (id, shop_id);
+
 create table if not exists autoshop_jobs (
   id uuid primary key default gen_random_uuid(),
   shop_id uuid not null references autoshop_shops(id),
@@ -89,6 +112,7 @@ create table if not exists autoshop_jobs (
   status text not null default 'booked',
   scheduled_at timestamptz,
   booking_idempotency_key uuid,
+  technician_id uuid,
   created_at timestamptz not null default now()
 );
 
@@ -96,10 +120,30 @@ alter table autoshop_services add column if not exists shop_id uuid references a
 alter table autoshop_jobs add column if not exists shop_id uuid references autoshop_shops(id);
 alter table autoshop_jobs add column if not exists customer_email text;
 alter table autoshop_jobs add column if not exists booking_idempotency_key uuid;
+alter table autoshop_jobs add column if not exists technician_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+      where conname = 'autoshop_jobs_technician_shop_fk'
+        and conrelid = 'autoshop_jobs'::regclass
+  ) then
+    alter table autoshop_jobs
+      add constraint autoshop_jobs_technician_shop_fk
+      foreign key (technician_id, shop_id)
+      references autoshop_technicians (id, shop_id);
+  end if;
+end;
+$$;
 
 create unique index if not exists autoshop_jobs_booking_idempotency_key
   on autoshop_jobs (shop_id, booking_idempotency_key)
   where booking_idempotency_key is not null;
+
+create index if not exists autoshop_jobs_technician_lookup
+  on autoshop_jobs (shop_id, technician_id, status);
 
 alter table autoshop_services drop constraint if exists autoshop_services_name_key;
 create unique index if not exists autoshop_services_shop_name_key
@@ -138,7 +182,10 @@ create table if not exists autoshop_email_deliveries (
   job_id uuid not null references autoshop_jobs(id) on delete cascade,
   message_id uuid references autoshop_messages(id) on delete cascade,
   template_id text not null check (
-    template_id in ('status_update', 'completion_report', 'reminder', 'review_request')
+    template_id in (
+      'status_update', 'completion_report', 'reminder', 'review_request',
+      'extra_work_approval'
+    )
   ),
   transport text not null check (transport in ('n8n', 'resend')),
   recipient text not null,
@@ -163,6 +210,101 @@ create unique index if not exists autoshop_one_active_reminder_delivery
   on autoshop_email_deliveries (job_id, template_id)
   where template_id = 'reminder'
     and status in ('pending', 'sent', 'reconciling');
+
+create table if not exists autoshop_approval_requests (
+  id uuid primary key,
+  shop_id uuid not null references autoshop_shops(id) on delete cascade,
+  job_id uuid not null references autoshop_jobs(id) on delete cascade,
+  message_id uuid unique references autoshop_messages(id) on delete set null,
+  description text not null check (
+    char_length(trim(description)) between 1 and 1000
+  ),
+  line_items jsonb not null check (
+    jsonb_typeof(line_items) = 'array' and jsonb_array_length(line_items) > 0
+  ),
+  amount integer not null check (amount > 0),
+  customer_explanation text not null check (
+    char_length(trim(customer_explanation)) between 1 and 4000
+  ),
+  status text not null default 'pending' check (
+    status in ('pending', 'approved', 'declined', 'expired')
+  ),
+  token_hash text not null unique check (token_hash ~ '^[0-9a-f]{64}$'),
+  expires_at timestamptz not null,
+  decided_at timestamptz,
+  created_at timestamptz not null default now(),
+  check (
+    (status = 'pending' and decided_at is null)
+    or (status <> 'pending' and decided_at is not null)
+  )
+);
+
+create unique index if not exists autoshop_one_pending_approval_per_job
+  on autoshop_approval_requests (job_id)
+  where status = 'pending';
+
+create index if not exists autoshop_approvals_shop_status
+  on autoshop_approval_requests (shop_id, status, created_at desc);
+
+insert into storage.buckets (
+  id, name, public, file_size_limit, allowed_mime_types
+)
+values (
+  'auto-repair-intake-photos',
+  'auto-repair-intake-photos',
+  false,
+  4194304,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+create table if not exists autoshop_intake_photos (
+  id uuid primary key,
+  shop_id uuid not null references autoshop_shops(id) on delete cascade,
+  job_id uuid references autoshop_jobs(id) on delete cascade,
+  intake_key_hash text not null check (
+    intake_key_hash ~ '^[0-9a-f]{64}$'
+  ),
+  content_hash text not null check (content_hash ~ '^[0-9a-f]{64}$'),
+  storage_path text not null unique,
+  mime_type text not null check (
+    mime_type in ('image/jpeg', 'image/png', 'image/webp')
+  ),
+  size_bytes integer not null check (
+    size_bytes between 1 and 4194304
+  ),
+  status text not null default 'uploading' check (
+    status in ('uploading', 'ready', 'deleting')
+  ),
+  created_at timestamptz not null default now(),
+  attached_at timestamptz
+);
+
+create index if not exists autoshop_intake_photos_session
+  on autoshop_intake_photos (shop_id, intake_key_hash, status);
+create index if not exists autoshop_intake_photos_job
+  on autoshop_intake_photos (job_id)
+  where job_id is not null;
+
+create table if not exists autoshop_intake_sessions (
+  id uuid primary key,
+  shop_id uuid not null references autoshop_shops(id) on delete cascade,
+  job_id uuid unique references autoshop_jobs(id) on delete cascade,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  booked_at timestamptz,
+  check (completed_at is null or completed_at >= started_at),
+  check (
+    (job_id is null and booked_at is null)
+    or (job_id is not null and completed_at is not null and booked_at is not null)
+  )
+);
+
+create index if not exists autoshop_intake_sessions_shop_started
+  on autoshop_intake_sessions (shop_id, started_at desc);
 
 create table if not exists autoshop_tracker_attempts (
   id uuid primary key default gen_random_uuid(),
@@ -240,7 +382,9 @@ as $$
 declare
   recent_attempts integer;
 begin
-  if p_bucket not in ('admin-login', 'booking', 'triage')
+  if p_bucket not in (
+      'admin-login', 'booking', 'triage', 'approval-decision', 'photo-upload'
+    )
     or p_rate_key !~ '^[0-9a-f]{64}$'
     or p_limit < 1
     or p_limit > 100
@@ -766,14 +910,787 @@ begin
 end;
 $$;
 
+create or replace function assign_autoshop_technician(
+  p_job_id uuid,
+  p_shop_id uuid,
+  p_technician_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  target_job autoshop_jobs%rowtype;
+begin
+  select *
+    into target_job
+    from autoshop_jobs
+    where id = p_job_id
+      and shop_id = p_shop_id
+    for update;
+
+  if not found then
+    raise exception 'JOB_NOT_FOUND';
+  end if;
+
+  if p_technician_id is not null and not exists (
+    select 1
+      from autoshop_technicians
+      where id = p_technician_id
+        and shop_id = p_shop_id
+        and is_active = true
+  ) then
+    raise exception 'TECHNICIAN_NOT_FOUND';
+  end if;
+
+  update autoshop_jobs
+    set technician_id = p_technician_id
+    where id = target_job.id
+    returning * into target_job;
+
+  return to_jsonb(target_job);
+end;
+$$;
+
+create or replace function create_autoshop_approval_request(
+  p_request_id uuid,
+  p_shop_id uuid,
+  p_job_id uuid,
+  p_service_id uuid,
+  p_description text,
+  p_amount integer,
+  p_customer_explanation text,
+  p_token_hash text,
+  p_expires_at timestamptz,
+  p_transport text,
+  p_recipient text,
+  p_cap integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  target_job autoshop_jobs%rowtype;
+  target_service autoshop_services%rowtype;
+  approval autoshop_approval_requests%rowtype;
+  approval_message autoshop_messages%rowtype;
+  delivery autoshop_email_deliveries%rowtype;
+  reservation jsonb;
+begin
+  if p_request_id is null or p_token_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'INVALID_APPROVAL_REQUEST';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('autoshop-approval:' || p_request_id::text, 0)
+  );
+  select * into approval
+    from autoshop_approval_requests where id = p_request_id;
+  if found then
+    if approval.shop_id <> p_shop_id
+      or approval.job_id <> p_job_id
+      or approval.description <> trim(p_description)
+      or approval.amount <> p_amount
+      or approval.token_hash <> p_token_hash
+      or approval.line_items->0->>'service_id' <> p_service_id::text then
+      raise exception 'IDEMPOTENCY_CONFLICT';
+    end if;
+    select * into approval_message
+      from autoshop_messages where id = approval.message_id;
+    select * into delivery
+      from autoshop_email_deliveries where message_id = approval.message_id;
+    return jsonb_build_object(
+      'is_replay', true, 'approval', to_jsonb(approval),
+      'message', to_jsonb(approval_message), 'delivery', to_jsonb(delivery)
+    );
+  end if;
+
+  select * into target_job
+    from autoshop_jobs
+    where id = p_job_id and shop_id = p_shop_id
+    for update;
+  if not found then raise exception 'JOB_NOT_FOUND'; end if;
+  if target_job.status not in ('in_progress', 'waiting_parts') then
+    raise exception 'JOB_NOT_ACTIVE';
+  end if;
+  if target_job.customer_email is null then
+    raise exception 'CUSTOMER_EMAIL_REQUIRED';
+  end if;
+
+  update autoshop_approval_requests
+    set status = 'expired', decided_at = now()
+    where job_id = p_job_id and status = 'pending' and expires_at <= now();
+  if exists (
+    select 1 from autoshop_approval_requests
+    where job_id = p_job_id and status = 'pending'
+  ) then
+    raise exception 'APPROVAL_ALREADY_PENDING';
+  end if;
+
+  select * into target_service
+    from autoshop_services
+    where id = p_service_id and shop_id = p_shop_id;
+  if not found then raise exception 'SERVICE_NOT_FOUND'; end if;
+  if p_amount < target_service.price_min or p_amount > target_service.price_max then
+    raise exception 'AMOUNT_OUTSIDE_SERVICE_RANGE';
+  end if;
+  if char_length(trim(coalesce(p_description, ''))) not between 1 and 1000
+    or char_length(trim(coalesce(p_customer_explanation, ''))) not between 1 and 4000
+    or p_expires_at <= now()
+    or p_expires_at > now() + interval '7 days' then
+    raise exception 'INVALID_APPROVAL_REQUEST';
+  end if;
+
+  insert into autoshop_approval_requests (
+    id, shop_id, job_id, description, line_items, amount,
+    customer_explanation, token_hash, expires_at
+  ) values (
+    p_request_id, p_shop_id, p_job_id, trim(p_description),
+    jsonb_build_array(jsonb_build_object(
+      'service_id', target_service.id,
+      'name', target_service.name,
+      'amount', p_amount
+    )),
+    p_amount, trim(p_customer_explanation), p_token_hash, p_expires_at
+  ) returning * into approval;
+
+  insert into autoshop_messages (job_id, kind, body, sent, action_key)
+    values (
+      p_job_id, 'extra_work_approval', trim(p_customer_explanation), false,
+      'approval:' || p_request_id::text
+    )
+    returning * into approval_message;
+  update autoshop_approval_requests
+    set message_id = approval_message.id
+    where id = approval.id
+    returning * into approval;
+
+  reservation := reserve_autoshop_email_delivery(
+    p_shop_id, p_job_id, approval_message.id, 'extra_work_approval',
+    p_transport, p_recipient, p_cap
+  );
+  delivery := jsonb_populate_record(
+    null::autoshop_email_deliveries, reservation->'delivery'
+  );
+  if delivery.status = 'capped' then
+    raise exception 'APPROVAL_DELIVERY_CAPPED';
+  end if;
+  return jsonb_build_object(
+    'is_replay', false, 'approval', to_jsonb(approval),
+    'message', to_jsonb(approval_message), 'delivery', to_jsonb(delivery)
+  );
+end;
+$$;
+
+create or replace function decide_autoshop_approval(
+  p_request_id uuid,
+  p_token_hash text,
+  p_decision text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  approval autoshop_approval_requests%rowtype;
+  target_job autoshop_jobs%rowtype;
+begin
+  if p_decision not in ('approved', 'declined') then
+    return jsonb_build_object('outcome', 'invalid');
+  end if;
+  select * into approval
+    from autoshop_approval_requests
+    where id = p_request_id and token_hash = p_token_hash
+    for update;
+  if not found then return jsonb_build_object('outcome', 'invalid'); end if;
+  if approval.status <> 'pending' then
+    return jsonb_build_object(
+      'outcome', 'already_decided', 'approval', to_jsonb(approval)
+    );
+  end if;
+  if approval.expires_at <= now() then
+    update autoshop_approval_requests
+      set status = 'expired', decided_at = now()
+      where id = approval.id
+      returning * into approval;
+    return jsonb_build_object(
+      'outcome', 'expired', 'approval', to_jsonb(approval)
+    );
+  end if;
+
+  select * into target_job
+    from autoshop_jobs
+    where id = approval.job_id and shop_id = approval.shop_id
+    for update;
+  if not found then return jsonb_build_object('outcome', 'invalid'); end if;
+  if target_job.status not in ('in_progress', 'waiting_parts') then
+    return jsonb_build_object(
+      'outcome', 'conflict',
+      'current_status', target_job.status
+    );
+  end if;
+  update autoshop_approval_requests
+    set status = p_decision, decided_at = now()
+    where id = approval.id
+    returning * into approval;
+  update autoshop_jobs
+    set status = 'in_progress'
+    where id = target_job.id
+    returning * into target_job;
+  insert into autoshop_status_history (job_id, status, note, action_key)
+    values (
+      target_job.id, 'in_progress',
+      case p_decision
+        when 'approved' then 'Customer approved extra work'
+        else 'Customer declined extra work'
+      end,
+      'approval-decision:' || approval.id::text
+    );
+  return jsonb_build_object(
+    'outcome', p_decision, 'approval', to_jsonb(approval),
+    'job', to_jsonb(target_job)
+  );
+end;
+$$;
+
+create or replace function reserve_autoshop_intake_photo(
+  p_photo_id uuid,
+  p_shop_id uuid,
+  p_intake_key_hash text,
+  p_content_hash text,
+  p_storage_path text,
+  p_mime_type text,
+  p_size_bytes integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  photo autoshop_intake_photos%rowtype;
+  expected_extension text;
+begin
+  if p_photo_id is null
+    or p_intake_key_hash !~ '^[0-9a-f]{64}$'
+    or p_content_hash !~ '^[0-9a-f]{64}$'
+    or p_mime_type not in ('image/jpeg', 'image/png', 'image/webp')
+    or p_size_bytes < 1
+    or p_size_bytes > 4194304 then
+    raise exception 'INVALID_INTAKE_PHOTO';
+  end if;
+  if not exists (
+    select 1 from autoshop_shops
+    where id = p_shop_id and is_active = true
+  ) then
+    raise exception 'STALE_SHOP';
+  end if;
+  expected_extension := case p_mime_type
+    when 'image/jpeg' then '.jpg'
+    when 'image/png' then '.png'
+    when 'image/webp' then '.webp'
+  end;
+  if p_storage_path <> (
+    p_shop_id::text || '/' || p_intake_key_hash || '/' ||
+    p_photo_id::text || expected_extension
+  ) then
+    raise exception 'INVALID_STORAGE_PATH';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'autoshop-intake:' || p_shop_id::text || ':' || p_intake_key_hash,
+      0
+    )
+  );
+  select * into photo from autoshop_intake_photos where id = p_photo_id;
+  if found then
+    if photo.shop_id <> p_shop_id
+      or photo.intake_key_hash <> p_intake_key_hash
+      or photo.content_hash <> p_content_hash
+      or photo.storage_path <> p_storage_path
+      or photo.mime_type <> p_mime_type
+      or photo.size_bytes <> p_size_bytes then
+      raise exception 'PHOTO_ID_CONFLICT';
+    end if;
+    return to_jsonb(photo);
+  end if;
+  if (
+    select count(*) from autoshop_intake_photos
+    where shop_id = p_shop_id
+      and intake_key_hash = p_intake_key_hash
+      and job_id is null
+  ) >= 3 then
+    raise exception 'PHOTO_LIMIT_REACHED';
+  end if;
+  insert into autoshop_intake_photos (
+    id, shop_id, intake_key_hash, content_hash, storage_path, mime_type, size_bytes
+  ) values (
+    p_photo_id, p_shop_id, p_intake_key_hash, p_content_hash, p_storage_path,
+    p_mime_type, p_size_bytes
+  )
+  returning * into photo;
+  return to_jsonb(photo);
+end;
+$$;
+
+create or replace function complete_autoshop_intake_photo(
+  p_photo_id uuid,
+  p_intake_key_hash text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  photo autoshop_intake_photos%rowtype;
+begin
+  select * into photo
+    from autoshop_intake_photos
+    where id = p_photo_id and intake_key_hash = p_intake_key_hash;
+  if not found then raise exception 'PHOTO_NOT_FOUND'; end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'autoshop-intake:' || photo.shop_id::text || ':' || p_intake_key_hash,
+      0
+    )
+  );
+  update autoshop_intake_photos
+    set status = 'ready'
+    where id = p_photo_id
+      and intake_key_hash = p_intake_key_hash
+      and job_id is null
+      and status in ('uploading', 'ready')
+    returning * into photo;
+  if not found then raise exception 'PHOTO_NOT_FOUND'; end if;
+  return to_jsonb(photo);
+end;
+$$;
+
+create or replace function claim_autoshop_intake_photo_deletion(
+  p_photo_id uuid,
+  p_intake_key_hash text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  photo autoshop_intake_photos%rowtype;
+begin
+  select * into photo
+    from autoshop_intake_photos
+    where id = p_photo_id and intake_key_hash = p_intake_key_hash;
+  if not found then raise exception 'PHOTO_NOT_FOUND'; end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'autoshop-intake:' || photo.shop_id::text || ':' || p_intake_key_hash,
+      0
+    )
+  );
+  select * into photo
+    from autoshop_intake_photos
+    where id = p_photo_id and intake_key_hash = p_intake_key_hash
+    for update;
+  if not found or photo.job_id is not null
+    or photo.status not in ('uploading', 'ready', 'deleting') then
+    raise exception 'PHOTO_NOT_FOUND';
+  end if;
+  if photo.status = 'ready' then
+    update autoshop_intake_photos
+      set status = 'deleting'
+      where id = photo.id
+      returning * into photo;
+  end if;
+  return to_jsonb(photo);
+end;
+$$;
+
+create or replace function finalize_autoshop_intake_photo_deletion(
+  p_photo_id uuid,
+  p_intake_key_hash text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  photo autoshop_intake_photos%rowtype;
+  deleted_count integer;
+begin
+  select * into photo
+    from autoshop_intake_photos
+    where id = p_photo_id and intake_key_hash = p_intake_key_hash;
+  if not found then return true; end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'autoshop-intake:' || photo.shop_id::text || ':' || p_intake_key_hash,
+      0
+    )
+  );
+  delete from autoshop_intake_photos
+    where id = p_photo_id
+      and intake_key_hash = p_intake_key_hash
+      and job_id is null
+      and status = 'deleting'
+    returning * into photo;
+  get diagnostics deleted_count = row_count;
+  return deleted_count = 1;
+end;
+$$;
+
+create or replace function create_autoshop_booking_with_photos(
+  p_shop_id uuid,
+  p_customer_name text,
+  p_plate_number text,
+  p_phone text,
+  p_customer_email text,
+  p_vehicle text,
+  p_service_id uuid,
+  p_issue_description text,
+  p_probable_issue text,
+  p_urgency text,
+  p_scheduled_date text,
+  p_scheduled_time text,
+  p_idempotency_key uuid,
+  p_intake_key_hash text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  created_job jsonb;
+  created_job_id uuid;
+  ready_count integer;
+begin
+  created_job := create_autoshop_booking(
+    p_shop_id, p_customer_name, p_plate_number, p_phone, p_customer_email,
+    p_vehicle, p_service_id, p_issue_description, p_probable_issue, p_urgency,
+    p_scheduled_date, p_scheduled_time, p_idempotency_key
+  );
+  created_job_id := (created_job->>'id')::uuid;
+  if p_intake_key_hash is null then return created_job; end if;
+  if p_intake_key_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'INVALID_INTAKE_PHOTOS';
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      'autoshop-intake:' || p_shop_id::text || ':' || p_intake_key_hash,
+      0
+    )
+  );
+  if exists (
+    select 1 from autoshop_intake_photos
+    where shop_id = p_shop_id
+      and intake_key_hash = p_intake_key_hash
+      and job_id is not null
+      and job_id <> created_job_id
+  ) then
+    raise exception 'INTAKE_PHOTOS_ALREADY_ATTACHED';
+  end if;
+  if exists (
+    select 1 from autoshop_intake_photos
+    where job_id = created_job_id
+      and intake_key_hash <> p_intake_key_hash
+  ) then
+    raise exception 'BOOKING_PHOTO_CONFLICT';
+  end if;
+  select count(*) into ready_count
+    from autoshop_intake_photos
+    where shop_id = p_shop_id
+      and intake_key_hash = p_intake_key_hash
+      and status = 'ready'
+      and (job_id is null or job_id = created_job_id);
+  if ready_count < 1 or ready_count > 3 then
+    raise exception 'INVALID_INTAKE_PHOTOS';
+  end if;
+  update autoshop_intake_photos
+    set job_id = created_job_id,
+        attached_at = coalesce(attached_at, now())
+    where shop_id = p_shop_id
+      and intake_key_hash = p_intake_key_hash
+      and status = 'ready'
+      and job_id is null;
+  if (
+    select count(*) from autoshop_intake_photos
+    where job_id = created_job_id and status = 'ready'
+  ) > 3 then
+    raise exception 'PHOTO_LIMIT_REACHED';
+  end if;
+  return created_job;
+end;
+$$;
+
+create or replace function record_autoshop_intake_session(
+  p_session_id uuid,
+  p_shop_id uuid,
+  p_completed boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  intake_session autoshop_intake_sessions%rowtype;
+begin
+  if p_session_id is null or p_shop_id is null or p_completed is null then
+    raise exception 'INVALID_INTAKE_SESSION';
+  end if;
+  if not exists (
+    select 1 from autoshop_shops
+    where id = p_shop_id and is_active = true
+  ) then
+    raise exception 'STALE_SHOP';
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended('autoshop-intake-session:' || p_session_id::text, 0)
+  );
+  select * into intake_session
+    from autoshop_intake_sessions
+    where id = p_session_id
+    for update;
+  if found then
+    if intake_session.shop_id <> p_shop_id then
+      raise exception 'INTAKE_SESSION_CONFLICT';
+    end if;
+    if p_completed and intake_session.completed_at is null then
+      update autoshop_intake_sessions
+        set completed_at = now()
+        where id = p_session_id
+        returning * into intake_session;
+    end if;
+    return to_jsonb(intake_session);
+  end if;
+  insert into autoshop_intake_sessions (id, shop_id, completed_at)
+    values (
+      p_session_id,
+      p_shop_id,
+      case when p_completed then now() else null end
+    )
+    returning * into intake_session;
+  return to_jsonb(intake_session);
+end;
+$$;
+
+create or replace function create_autoshop_booking_with_photos(
+  p_shop_id uuid,
+  p_customer_name text,
+  p_plate_number text,
+  p_phone text,
+  p_customer_email text,
+  p_vehicle text,
+  p_service_id uuid,
+  p_issue_description text,
+  p_probable_issue text,
+  p_urgency text,
+  p_scheduled_date text,
+  p_scheduled_time text,
+  p_idempotency_key uuid,
+  p_intake_key_hash text,
+  p_intake_session_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  created_job jsonb;
+  created_job_id uuid;
+  intake_session autoshop_intake_sessions%rowtype;
+begin
+  created_job := create_autoshop_booking_with_photos(
+    p_shop_id, p_customer_name, p_plate_number, p_phone, p_customer_email,
+    p_vehicle, p_service_id, p_issue_description, p_probable_issue, p_urgency,
+    p_scheduled_date, p_scheduled_time, p_idempotency_key, p_intake_key_hash
+  );
+  if p_intake_session_id is null then return created_job; end if;
+  created_job_id := (created_job->>'id')::uuid;
+  select * into intake_session
+    from autoshop_intake_sessions
+    where id = p_intake_session_id
+    for update;
+  if not found
+    or intake_session.shop_id <> p_shop_id
+    or intake_session.completed_at is null then
+    raise exception 'INVALID_INTAKE_SESSION';
+  end if;
+  if intake_session.job_id is not null
+    and intake_session.job_id <> created_job_id then
+    raise exception 'INTAKE_SESSION_ALREADY_BOOKED';
+  end if;
+  update autoshop_intake_sessions
+    set job_id = created_job_id,
+        booked_at = coalesce(booked_at, now())
+    where id = p_intake_session_id;
+  return created_job;
+end;
+$$;
+
+create or replace function get_autoshop_dashboard_metrics(
+  p_shop_id uuid,
+  p_days integer
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = auto_repair, public
+as $$
+declare
+  shop_timezone text;
+  period_start timestamptz;
+  jobs_total integer;
+  booked_min bigint;
+  booked_max bigint;
+  average_min numeric;
+  average_max numeric;
+  intakes_completed integer;
+  intakes_booked integer;
+  approvals_decided integer;
+  approvals_approved integer;
+  reminders_sent integer;
+  current_unassigned integer;
+  status_counts jsonb;
+  technician_workload jsonb;
+begin
+  if p_days not in (7, 30, 90) then
+    raise exception 'INVALID_DASHBOARD_RANGE';
+  end if;
+  select timezone into shop_timezone
+    from autoshop_shops
+    where id = p_shop_id;
+  if not found then raise exception 'SHOP_NOT_FOUND'; end if;
+  period_start := (
+    date_trunc('day', now() at time zone shop_timezone)
+    - make_interval(days => p_days - 1)
+  ) at time zone shop_timezone;
+
+  select
+    count(*)::integer,
+    coalesce(sum(estimate_min), 0)::bigint,
+    coalesce(sum(estimate_max), 0)::bigint,
+    coalesce(avg(estimate_min), 0),
+    coalesce(avg(estimate_max), 0)
+  into jobs_total, booked_min, booked_max, average_min, average_max
+  from autoshop_jobs
+  where shop_id = p_shop_id and created_at >= period_start;
+
+  select jsonb_build_object(
+    'booked', count(*) filter (where status = 'booked'),
+    'in_progress', count(*) filter (where status = 'in_progress'),
+    'waiting_parts', count(*) filter (where status = 'waiting_parts'),
+    'ready', count(*) filter (where status = 'ready'),
+    'done', count(*) filter (where status = 'done')
+  ) into status_counts
+  from autoshop_jobs
+  where shop_id = p_shop_id and created_at >= period_start;
+
+  select
+    count(*)::integer,
+    count(*) filter (where job_id is not null)::integer
+  into intakes_completed, intakes_booked
+  from autoshop_intake_sessions
+  where shop_id = p_shop_id
+    and started_at >= period_start
+    and completed_at is not null;
+
+  select
+    count(*)::integer,
+    count(*) filter (where status = 'approved')::integer
+  into approvals_decided, approvals_approved
+  from autoshop_approval_requests
+  where shop_id = p_shop_id
+    and status in ('approved', 'declined')
+    and decided_at >= period_start;
+
+  select count(*)::integer into reminders_sent
+  from autoshop_email_deliveries
+  where shop_id = p_shop_id
+    and template_id = 'reminder'
+    and status = 'sent'
+    and sent_at >= period_start;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', technician.id,
+        'name', technician.name,
+        'active_jobs', technician.active_jobs
+      )
+      order by technician.active_jobs desc, technician.name
+    ),
+    '[]'::jsonb
+  ) into technician_workload
+  from (
+    select t.id, t.name, count(j.id)::integer as active_jobs
+    from autoshop_technicians t
+    left join autoshop_jobs j
+      on j.technician_id = t.id
+      and j.shop_id = t.shop_id
+      and j.status <> 'done'
+    where t.shop_id = p_shop_id and t.is_active = true
+    group by t.id, t.name
+  ) technician;
+
+  select count(*)::integer into current_unassigned
+  from autoshop_jobs
+  where shop_id = p_shop_id
+    and technician_id is null
+    and status <> 'done';
+
+  return jsonb_build_object(
+    'period_days', p_days,
+    'period_start', period_start,
+    'jobs_total', jobs_total,
+    'jobs_by_status', status_counts,
+    'estimated_booked_value', jsonb_build_object(
+      'minimum', booked_min, 'maximum', booked_max
+    ),
+    'estimated_average_ticket', jsonb_build_object(
+      'minimum', round(average_min, 2), 'maximum', round(average_max, 2)
+    ),
+    'intake_conversion', jsonb_build_object(
+      'completed', intakes_completed,
+      'booked', intakes_booked,
+      'rate', case when intakes_completed = 0 then 0
+        else round(intakes_booked::numeric * 100 / intakes_completed, 1) end
+    ),
+    'approval_acceptance', jsonb_build_object(
+      'decided', approvals_decided,
+      'approved', approvals_approved,
+      'rate', case when approvals_decided = 0 then 0
+        else round(approvals_approved::numeric * 100 / approvals_decided, 1) end
+    ),
+    'reminders_sent', reminders_sent,
+    'technician_workload', technician_workload,
+    'current_unassigned_jobs', current_unassigned
+  );
+end;
+$$;
+
 alter table autoshop_shops enable row level security;
 alter table autoshop_services enable row level security;
+alter table autoshop_technicians enable row level security;
 alter table autoshop_jobs enable row level security;
 alter table autoshop_status_history enable row level security;
 alter table autoshop_messages enable row level security;
 alter table autoshop_email_deliveries enable row level security;
 alter table autoshop_tracker_attempts enable row level security;
 alter table autoshop_api_attempts enable row level security;
+alter table autoshop_approval_requests enable row level security;
+alter table autoshop_intake_photos enable row level security;
+alter table autoshop_intake_sessions enable row level security;
 
 drop policy if exists "public read autoshop_shops" on autoshop_shops;
 create policy "public read autoshop_shops" on autoshop_shops for select using (true);
@@ -844,6 +1761,75 @@ revoke all on function transition_autoshop_job(
 grant execute on function transition_autoshop_job(
   uuid, uuid, text, text, text, text, text, integer
 ) to service_role;
+
+revoke all on function assign_autoshop_technician(
+  uuid, uuid, uuid
+) from public, anon, authenticated;
+grant execute on function assign_autoshop_technician(
+  uuid, uuid, uuid
+) to service_role;
+
+revoke all on function create_autoshop_approval_request(
+  uuid, uuid, uuid, uuid, text, integer, text, text, timestamptz,
+  text, text, integer
+) from public, anon, authenticated;
+grant execute on function create_autoshop_approval_request(
+  uuid, uuid, uuid, uuid, text, integer, text, text, timestamptz,
+  text, text, integer
+) to service_role;
+
+revoke all on function decide_autoshop_approval(uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function decide_autoshop_approval(uuid, text, text)
+  to service_role;
+
+revoke all on function reserve_autoshop_intake_photo(
+  uuid, uuid, text, text, text, text, integer
+) from public, anon, authenticated;
+grant execute on function reserve_autoshop_intake_photo(
+  uuid, uuid, text, text, text, text, integer
+) to service_role;
+
+revoke all on function complete_autoshop_intake_photo(uuid, text)
+  from public, anon, authenticated;
+grant execute on function complete_autoshop_intake_photo(uuid, text)
+  to service_role;
+revoke all on function claim_autoshop_intake_photo_deletion(uuid, text)
+  from public, anon, authenticated;
+grant execute on function claim_autoshop_intake_photo_deletion(uuid, text)
+  to service_role;
+revoke all on function finalize_autoshop_intake_photo_deletion(uuid, text)
+  from public, anon, authenticated;
+grant execute on function finalize_autoshop_intake_photo_deletion(uuid, text)
+  to service_role;
+
+revoke all on function create_autoshop_booking_with_photos(
+  uuid, text, text, text, text, text, uuid, text, text, text,
+  text, text, uuid, text
+) from public, anon, authenticated;
+grant execute on function create_autoshop_booking_with_photos(
+  uuid, text, text, text, text, text, uuid, text, text, text,
+  text, text, uuid, text
+) to service_role;
+
+revoke all on function record_autoshop_intake_session(uuid, uuid, boolean)
+  from public, anon, authenticated;
+grant execute on function record_autoshop_intake_session(uuid, uuid, boolean)
+  to service_role;
+
+revoke all on function create_autoshop_booking_with_photos(
+  uuid, text, text, text, text, text, uuid, text, text, text,
+  text, text, uuid, text, uuid
+) from public, anon, authenticated;
+grant execute on function create_autoshop_booking_with_photos(
+  uuid, text, text, text, text, text, uuid, text, text, text,
+  text, text, uuid, text, uuid
+) to service_role;
+
+revoke all on function get_autoshop_dashboard_metrics(uuid, integer)
+  from public, anon, authenticated;
+grant execute on function get_autoshop_dashboard_metrics(uuid, integer)
+  to service_role;
 
 alter default privileges for role postgres in schema auto_repair
   revoke all on tables from anon, authenticated;

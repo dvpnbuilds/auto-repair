@@ -86,12 +86,14 @@ test("tracker is a rate-limited server lookup with a minimized response", async 
 
 test("admin sessions use a new HMAC-signed cookie and no credential is documented", async () => {
   const auth = await source("lib", "admin", "auth.ts");
+  const sessionToken = await source("lib", "admin", "session-token.ts");
   const progress = await source("PROGRESS.md");
 
   assert.match(auth, /const COOKIE_NAME = "autoshop_admin_v2"/);
-  assert.match(auth, /createHmac\("sha256", secret\)/);
+  assert.match(sessionToken, /createHmac\("sha256", secret\)/);
+  assert.match(sessionToken, /expiresAt <= now/);
   assert.match(auth, /ADMIN_SESSION_SECRET/);
-  assert.match(auth, /timingSafeEqual/);
+  assert.match(sessionToken, /timingSafeEqual/);
   assert.match(auth, /store\.delete\(LEGACY_COOKIE_NAME\)/);
   assert.doesNotMatch(auth, /createHash/);
   assert.doesNotMatch(progress, /ADMIN_PASSCODE set to a demo default \(`/);

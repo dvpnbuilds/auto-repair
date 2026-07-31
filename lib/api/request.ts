@@ -1,31 +1,18 @@
 import "server-only";
-
-export class RequestBodyError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 413
-  ) {
-    super(message);
-  }
-}
+import {
+  RequestBodyError,
+  validateDeclaredLength,
+} from "@/lib/api/bounded-bytes-core";
+export {
+  readBoundedBytes,
+  RequestBodyError,
+} from "@/lib/api/bounded-bytes-core";
 
 export async function readBoundedJson(
   request: Request,
   maxBytes: number
 ): Promise<unknown> {
-  const contentLength = request.headers.get("content-length");
-  if (contentLength) {
-    const declaredBytes = Number(contentLength);
-    if (
-      !Number.isSafeInteger(declaredBytes) ||
-      declaredBytes < 0
-    ) {
-      throw new RequestBodyError("Invalid Content-Length", 400);
-    }
-    if (declaredBytes > maxBytes) {
-      throw new RequestBodyError("Request body is too large", 413);
-    }
-  }
+  validateDeclaredLength(request, maxBytes);
 
   if (!request.body) return null;
 

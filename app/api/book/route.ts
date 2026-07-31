@@ -2,6 +2,8 @@ import {NextResponse} from "next/server";
 import {checkApiRateLimit} from "@/lib/api/rate-limit";
 import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {supabaseService} from "@/lib/supabase/server";
+import {hashIntakeKey} from "@/lib/photos/server";
+import {isValidIntakePhotoToken} from "@/lib/photos/session";
 
 type BookBody = {
   idempotency_key: string;
@@ -17,6 +19,8 @@ type BookBody = {
   urgency: string | null;
   scheduled_date: string;
   scheduled_time: string;
+  intake_token?: string | null;
+  intake_session_id?: string | null;
 };
 
 const UUID_PATTERN =
@@ -79,7 +83,15 @@ function isValidBody(value: unknown): value is BookBody {
     /^\d{4}-\d{2}-\d{2}$/.test(v.scheduled_date) &&
     isRealDate(v.scheduled_date) &&
     typeof v.scheduled_time === "string" &&
-    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v.scheduled_time)
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v.scheduled_time) &&
+    (v.intake_token === undefined ||
+      v.intake_token === null ||
+      (typeof v.intake_token === "string" &&
+        isValidIntakePhotoToken(v.intake_token))) &&
+    (v.intake_session_id === undefined ||
+      v.intake_session_id === null ||
+      (typeof v.intake_session_id === "string" &&
+        UUID_PATTERN.test(v.intake_session_id)))
   );
 }
 
@@ -121,7 +133,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const {data, error} = await supabaseService.rpc("create_autoshop_booking", {
+  const {data, error} = await supabaseService.rpc("create_autoshop_booking_with_photos", {
     p_idempotency_key: body.idempotency_key,
     p_shop_id: body.shop_id,
     p_customer_name: body.customer_name.trim(),
@@ -135,6 +147,10 @@ export async function POST(request: Request) {
     p_urgency: body.urgency?.trim() || null,
     p_scheduled_date: body.scheduled_date,
     p_scheduled_time: body.scheduled_time,
+    p_intake_key_hash: body.intake_token
+      ? hashIntakeKey(body.intake_token)
+      : null,
+    p_intake_session_id: body.intake_session_id ?? null,
   });
 
   if (error) {
@@ -150,7 +166,13 @@ export async function POST(request: Request) {
     if (
       error.message.includes("INVALID_SERVICE") ||
       error.message.includes("INVALID_SCHEDULE") ||
-      error.message.includes("INVALID_IDEMPOTENCY_KEY")
+      error.message.includes("INVALID_IDEMPOTENCY_KEY") ||
+      error.message.includes("INVALID_INTAKE_PHOTOS") ||
+      error.message.includes("INTAKE_PHOTOS_ALREADY_ATTACHED") ||
+      error.message.includes("BOOKING_PHOTO_CONFLICT") ||
+      error.message.includes("PHOTO_LIMIT_REACHED") ||
+      error.message.includes("INVALID_INTAKE_SESSION") ||
+      error.message.includes("INTAKE_SESSION_ALREADY_BOOKED")
     ) {
       return NextResponse.json({error: "Invalid booking selection"}, {status: 400});
     }

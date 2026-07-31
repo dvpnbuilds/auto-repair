@@ -1,6 +1,6 @@
 "use client";
 
-import {useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
 import {formatCurrency, getShopToday} from "@/lib/formatting";
@@ -24,6 +24,13 @@ type Prefill = {
 };
 
 const TIME_SLOTS = ["09:00", "11:00", "13:00", "15:00", "17:00"];
+const INTAKE_TRANSFER_KEY = "autoshop-intake-photo-transfer";
+
+function nextCalendarDate(date: string): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
 
 export default function BookingForm({
   services,
@@ -38,6 +45,7 @@ export default function BookingForm({
   const common = useTranslations("Common");
   const router = useRouter();
   const matchedService = services.find((service) => service.name === prefill.serviceName);
+  const today = getShopToday(shop);
 
   const [customerName, setCustomerName] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
@@ -46,14 +54,42 @@ export default function BookingForm({
   const [vehicle, setVehicle] = useState("");
   const [serviceId, setServiceId] = useState(matchedService?.id ?? "");
   const [issueDescription, setIssueDescription] = useState(prefill.issueDescription);
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(() => nextCalendarDate(today));
   const [time, setTime] = useState(TIME_SLOTS[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idempotencyKey = useRef<string | null>(null);
+  const intakeToken = useRef<string | null>(null);
+  const intakeSessionId = useRef<string | null>(null);
+  const [hasIntakePhotos, setHasIntakePhotos] = useState(false);
 
-  const today = getShopToday(shop);
   const selectedService = services.find((service) => service.id === serviceId);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem(INTAKE_TRANSFER_KEY);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored) as {
+        intakeToken?: unknown;
+        intakeSessionId?: unknown;
+      };
+      if (
+        typeof parsed.intakeSessionId === "string" &&
+        /^[0-9a-f-]{36}$/i.test(parsed.intakeSessionId)
+      ) {
+        intakeSessionId.current = parsed.intakeSessionId;
+      }
+      if (
+        typeof parsed.intakeToken === "string" &&
+        parsed.intakeToken.length <= 128
+      ) {
+        intakeToken.current = parsed.intakeToken;
+        queueMicrotask(() => setHasIntakePhotos(true));
+      }
+    } catch {
+      sessionStorage.removeItem(INTAKE_TRANSFER_KEY);
+    }
+  }, []);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -91,6 +127,8 @@ export default function BookingForm({
           urgency: prefill.urgency || null,
           scheduled_date: date,
           scheduled_time: time,
+          intake_token: intakeToken.current,
+          intake_session_id: intakeSessionId.current,
         }),
       });
 
@@ -108,6 +146,7 @@ export default function BookingForm({
         }
         throw new Error();
       }
+      sessionStorage.removeItem(INTAKE_TRANSFER_KEY);
       router.push("/track");
     } catch {
       setError(t("requestError"));
@@ -289,6 +328,16 @@ export default function BookingForm({
             <p className="mt-1 text-xs leading-5 text-[#60727a]">
               {formatCurrency(selectedService.price_min, shop)}–{" "}
               {formatCurrency(selectedService.price_max, shop)}
+            </p>
+          </div>
+        )}
+        {hasIntakePhotos && (
+          <div className="mt-4 rounded-xl border border-[#cfe3df] bg-[#edf7f5] p-4">
+            <p className="text-sm font-bold text-[#173744]">
+              {t("photosReady")}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[#60727a]">
+              {t("photosReadyHint")}
             </p>
           </div>
         )}

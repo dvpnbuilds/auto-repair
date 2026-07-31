@@ -31,7 +31,8 @@ The reminder workflow uses the n8n instance timezone for its hourly trigger; due
 
 The email workflow uses Header Auth before accepting a payload. It validates that
 the request's `Idempotency-Key` matches the durable delivery ID, renders one of
-four template IDs, and sends through Resend's HTTP API with that same key.
+five template IDs, including the extra-work approval action, and sends through
+Resend's HTTP API with that same key.
 Successful callbacks mark the delivery `sent`; ambiguous workflow or provider
 failures mark it `reconciling` so the app can safely retry within Resend's
 idempotency window.
