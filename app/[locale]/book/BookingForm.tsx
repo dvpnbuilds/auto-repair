@@ -1,10 +1,11 @@
 "use client";
 
-import {useState} from "react";
+import {useRef, useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
 import {formatCurrency, getShopToday} from "@/lib/formatting";
 import type {ShopConfig} from "@/lib/shop-config";
+import {ArrowRightIcon, CalendarIcon, CheckIcon} from "../components/Icons";
 
 type Service = {
   id: string;
@@ -49,6 +50,7 @@ export default function BookingForm({
   const [time, setTime] = useState(TIME_SLOTS[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
 
   const today = getShopToday(shop);
   const selectedService = services.find((service) => service.id === serviceId);
@@ -69,12 +71,14 @@ export default function BookingForm({
 
     setLoading(true);
     setError(null);
+    idempotencyKey.current ??= crypto.randomUUID();
 
     try {
       const res = await fetch("/api/book", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
+          idempotency_key: idempotencyKey.current,
           shop_id: shop.id,
           customer_name: customerName,
           plate_number: plateNumber,
@@ -90,8 +94,20 @@ export default function BookingForm({
         }),
       });
 
-      if (!res.ok) throw new Error();
-
+      if (!res.ok) {
+        const response = (await res.json().catch(() => null)) as
+          | {error?: string}
+          | null;
+        if (response?.error === "SLOT_UNAVAILABLE") {
+          setError(t("slotUnavailable"));
+          return;
+        }
+        if (response?.error === "STALE_SHOP") {
+          setError(t("shopChanged"));
+          return;
+        }
+        throw new Error();
+      }
       router.push("/track");
     } catch {
       setError(t("requestError"));
@@ -101,130 +117,198 @@ export default function BookingForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {prefill.probableIssue && (
-        <div className="border border-black/10 rounded p-4 text-sm bg-zinc-50">
-          <div className="font-medium mb-1">{prefill.probableIssue}</div>
-          {selectedService && (
-            <div className="text-zinc-600">
-              {formatCurrency(selectedService.price_min, shop)}–
-              {formatCurrency(selectedService.price_max, shop)} (
-              {common("initialEstimateDisclaimer")})
+    <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_19rem] lg:items-start">
+      <div className="surface overflow-hidden">
+        {prefill.probableIssue && (
+          <div className="flex gap-3 border-b border-[#cfe3df] bg-[#edf7f5] px-5 py-4 sm:px-7">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white text-[#087f78]">
+              <CheckIcon className="size-4" />
+            </span>
+            <div className="text-sm">
+              <div className="font-bold text-[#173744]">{prefill.probableIssue}</div>
+              {selectedService && (
+                <div className="mt-1 leading-6 text-[#60727a]">
+                  {formatCurrency(selectedService.price_min, shop)}–{" "}
+                  {formatCurrency(selectedService.price_max, shop)} ·{" "}
+                  {common("initialEstimateDisclaimer")}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      <label className="text-sm flex flex-col gap-1">
-        {t("name")}
-        <input
-          className="border border-black/20 rounded px-3 py-2"
-          value={customerName}
-          onChange={(event) => setCustomerName(event.target.value)}
-        />
-      </label>
+        <section className="border-b border-[#e3eae8] p-5 sm:p-7">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="section-number">1</span>
+            <div>
+              <h2 className="font-bold text-[#173744]">{t("contactTitle")}</h2>
+              <p className="mt-0.5 text-xs text-[#718187]">{t("contactHint")}</p>
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="field-label sm:col-span-2">
+              {t("name")}
+              <input
+                required
+                autoComplete="name"
+                className="field-control"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              {t("phone")}
+              <input
+                required
+                type="tel"
+                autoComplete="tel"
+                className="field-control"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              {t("email")}
+              <input
+                required
+                type="email"
+                autoComplete="email"
+                className="field-control"
+                placeholder={t("emailPlaceholder")}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+          </div>
+        </section>
 
-      <label className="text-sm flex flex-col gap-1">
-        {t("plateNumber")}
-        <input
-          className="border border-black/20 rounded px-3 py-2"
-          value={plateNumber}
-          onChange={(event) => setPlateNumber(event.target.value)}
-        />
-      </label>
+        <section className="border-b border-[#e3eae8] p-5 sm:p-7">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="section-number">2</span>
+            <div>
+              <h2 className="font-bold text-[#173744]">{t("vehicleTitle")}</h2>
+              <p className="mt-0.5 text-xs text-[#718187]">{t("vehicleHint")}</p>
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="field-label">
+              {t("vehicle")}
+              <input
+                required
+                className="field-control"
+                placeholder={t("vehiclePlaceholder")}
+                value={vehicle}
+                onChange={(event) => setVehicle(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              {t("plateNumber")}
+              <input
+                required
+                autoComplete="off"
+                className="field-control"
+                value={plateNumber}
+                onChange={(event) => setPlateNumber(event.target.value)}
+              />
+            </label>
+            <label className="field-label sm:col-span-2">
+              {t("service")}
+              <select
+                className="field-control"
+                value={serviceId}
+                onChange={(event) => setServiceId(event.target.value)}
+              >
+                <option value="">{t("selectService")}</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name} ({formatCurrency(service.price_min, shop)}–
+                    {formatCurrency(service.price_max, shop)})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label sm:col-span-2">
+              {t("issueDescription")}
+              <textarea
+                className="field-control min-h-28 resize-y"
+                placeholder={t("issuePlaceholder")}
+                value={issueDescription}
+                onChange={(event) => setIssueDescription(event.target.value)}
+              />
+            </label>
+          </div>
+        </section>
 
-      <label className="text-sm flex flex-col gap-1">
-        {t("phone")}
-        <input
-          className="border border-black/20 rounded px-3 py-2"
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-        />
-      </label>
-
-      <label className="text-sm flex flex-col gap-1">
-        {t("email")}
-        <input
-          type="email"
-          className="border border-black/20 rounded px-3 py-2"
-          placeholder={t("emailPlaceholder")}
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </label>
-
-      <label className="text-sm flex flex-col gap-1">
-        {t("vehicle")}
-        <input
-          className="border border-black/20 rounded px-3 py-2"
-          placeholder={t("vehiclePlaceholder")}
-          value={vehicle}
-          onChange={(event) => setVehicle(event.target.value)}
-        />
-      </label>
-
-      <label className="text-sm flex flex-col gap-1">
-        {t("service")}
-        <select
-          className="border border-black/20 rounded px-3 py-2"
-          value={serviceId}
-          onChange={(event) => setServiceId(event.target.value)}
-        >
-          <option value="">{t("selectService")}</option>
-          {services.map((service) => (
-            <option key={service.id} value={service.id}>
-              {service.name} ({formatCurrency(service.price_min, shop)}–
-              {formatCurrency(service.price_max, shop)})
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="text-sm flex flex-col gap-1">
-        {t("issueDescription")}
-        <textarea
-          className="border border-black/20 rounded px-3 py-2 min-h-20"
-          value={issueDescription}
-          onChange={(event) => setIssueDescription(event.target.value)}
-        />
-      </label>
-
-      <div className="flex gap-3">
-        <label className="text-sm flex flex-col gap-1 flex-1">
-          {t("date")}
-          <input
-            type="date"
-            min={today}
-            className="border border-black/20 rounded px-3 py-2"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
-        </label>
-
-        <label className="text-sm flex flex-col gap-1 flex-1">
-          {t("time")}
-          <select
-            className="border border-black/20 rounded px-3 py-2"
-            value={time}
-            onChange={(event) => setTime(event.target.value)}
-          >
-            {TIME_SLOTS.map((slot) => (
-              <option key={slot} value={slot}>
-                {slot}
-              </option>
-            ))}
-          </select>
-        </label>
+        <section className="p-5 sm:p-7">
+          <div className="mb-6 flex items-center gap-3">
+            <span className="section-number">3</span>
+            <div>
+              <h2 className="font-bold text-[#173744]">{t("appointmentTitle")}</h2>
+              <p className="mt-0.5 text-xs text-[#718187]">{t("appointmentHint")}</p>
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="field-label">
+              {t("date")}
+              <input
+                required
+                type="date"
+                min={today}
+                className="field-control"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+              />
+            </label>
+            <label className="field-label">
+              {t("time")}
+              <select
+                className="field-control"
+                value={time}
+                onChange={(event) => setTime(event.target.value)}
+              >
+                {TIME_SLOTS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="bg-black text-white rounded px-4 py-2 text-sm disabled:opacity-50"
-      >
-        {loading ? t("booking") : t("bookNow")}
-      </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      <aside className="surface-flat p-5 lg:sticky lg:top-28">
+        <span className="grid size-11 place-items-center rounded-xl bg-[#dff2ee] text-[#087f78]">
+          <CalendarIcon className="size-5" />
+        </span>
+        <h2 className="mt-5 text-lg font-bold text-[#173744]">{t("summaryTitle")}</h2>
+        <p className="mt-2 text-sm leading-6 text-[#60727a]">{t("summaryHint")}</p>
+        {selectedService && (
+          <div className="mt-5 rounded-xl bg-[#f4f7f6] p-4">
+            <p className="text-sm font-bold text-[#173744]">{selectedService.name}</p>
+            <p className="mt-1 text-xs leading-5 text-[#60727a]">
+              {formatCurrency(selectedService.price_min, shop)}–{" "}
+              {formatCurrency(selectedService.price_max, shop)}
+            </p>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="status-message mt-5">
+            {error}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="button-primary mt-6 w-full"
+        >
+          {loading ? t("booking") : t("bookNow")}
+          {!loading && <ArrowRightIcon className="size-4" />}
+        </button>
+        <p className="mt-3 text-center text-xs leading-5 text-[#718187]">
+          {t("confirmationHint")}
+        </p>
+      </aside>
     </form>
   );
 }

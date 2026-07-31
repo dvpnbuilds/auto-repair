@@ -23,12 +23,12 @@ test("Phase 6 upgrade and P2 forward migration backfill shop ownership", async (
   const phase6 = await source(
     "supabase",
     "migrations",
-    "20260730_phase6_shop_config.sql"
+    "20260730090000_phase6_shop_config.sql"
   );
   const p2 = await source(
     "supabase",
     "migrations",
-    "20260730_p2_audit_hardening.sql"
+    "20260730140000_p2_audit_hardening.sql"
   );
 
   for (const migration of [phase6, p2]) {
@@ -67,7 +67,7 @@ test("public mutation endpoints enforce bounded bodies and database quotas", asy
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p2_audit_hardening.sql"
+    "20260730140000_p2_audit_hardening.sql"
   );
   assert.match(migration, /pg_advisory_xact_lock/);
   assert.match(migration, /autoshop_api_attempts/);

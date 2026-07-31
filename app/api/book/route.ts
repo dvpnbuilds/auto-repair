@@ -4,6 +4,7 @@ import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {supabaseService} from "@/lib/supabase/server";
 
 type BookBody = {
+  idempotency_key: string;
   shop_id: string;
   customer_name: string;
   plate_number: string;
@@ -55,6 +56,8 @@ function isValidBody(value: unknown): value is BookBody {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return (
+    typeof v.idempotency_key === "string" &&
+    UUID_PATTERN.test(v.idempotency_key) &&
     typeof v.shop_id === "string" &&
     UUID_PATTERN.test(v.shop_id) &&
     boundedString(v.customer_name, 1, 100) &&
@@ -119,6 +122,7 @@ export async function POST(request: Request) {
   }
 
   const {data, error} = await supabaseService.rpc("create_autoshop_booking", {
+    p_idempotency_key: body.idempotency_key,
     p_shop_id: body.shop_id,
     p_customer_name: body.customer_name.trim(),
     p_plate_number: body.plate_number.trim().toUpperCase(),
@@ -134,15 +138,19 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    if (error.message.includes("SLOT_UNAVAILABLE")) {
+      return NextResponse.json({error: "SLOT_UNAVAILABLE"}, {status: 409});
+    }
     if (error.message.includes("STALE_SHOP")) {
       return NextResponse.json(
-        {error: "The active shop changed. Refresh and try again."},
+        {error: "STALE_SHOP"},
         {status: 409}
       );
     }
     if (
       error.message.includes("INVALID_SERVICE") ||
-      error.message.includes("INVALID_SCHEDULE")
+      error.message.includes("INVALID_SCHEDULE") ||
+      error.message.includes("INVALID_IDEMPOTENCY_KEY")
     ) {
       return NextResponse.json({error: "Invalid booking selection"}, {status: 400});
     }

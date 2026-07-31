@@ -1,10 +1,12 @@
 import {createHmac} from "crypto";
 import {NextResponse} from "next/server";
+import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {getActiveShop} from "@/lib/shop-config";
 import {supabaseService} from "@/lib/supabase/server";
 
 const RATE_LIMIT = 10;
 const RATE_WINDOW_SECONDS = 10 * 60;
+const MAX_TRACK_BODY_BYTES = 1024;
 
 function clientAddress(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -42,7 +44,16 @@ function readLookupInput(body: unknown) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, MAX_TRACK_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({error: error.message}, {status: error.status});
+    }
+    return NextResponse.json({error: "Invalid request body"}, {status: 400});
+  }
+
   const input = readLookupInput(body);
   if (!input) {
     return NextResponse.json({error: "Invalid tracker lookup"}, {status: 400});

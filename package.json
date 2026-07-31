@@ -11,10 +11,14 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "node --env-file=.env.local --import tsx scripts/seed.ts",
-    "test": "node --env-file=.env.local --import tsx --test --test-concurrency=1 tests/*.test.ts"
+    "test": "node --env-file=.env.local --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "verify:migrations": "node scripts/verify-migrations.mjs",
+    "verify:database-behavior": "node scripts/verify-local-database.mjs",
+    "verify:migrations:clean": "npm run verify:migrations && supabase db reset --local && npm run verify:database-behavior"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.3",
+    "@swc/helpers": "0.5.23",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
     "react": "19.2.4",

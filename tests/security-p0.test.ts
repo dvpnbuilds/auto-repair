@@ -14,7 +14,7 @@ test("anonymous customer-data policies are removed and private tables are revoke
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p0_security_hardening.sql"
+    "20260730120000_p0_security_hardening.sql"
   );
   const schema = await source("supabase", "schema.sql");
 
@@ -47,7 +47,7 @@ test("tracker is a rate-limited server lookup with a minimized response", async 
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p0_security_hardening.sql"
+    "20260730120000_p0_security_hardening.sql"
   );
   const lookupFunction = migration.slice(
     migration.indexOf("create or replace function lookup_autoshop_job"),

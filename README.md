@@ -8,9 +8,16 @@ Next.js (App Router) + Supabase (Postgres) + OpenRouter, deployed on Vercel.
 ## Local setup
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config. Then apply `supabase/schema.sql` to a new project. For an existing v1 database, apply the migrations in this order: `20260730_phase6_shop_config.sql`, `20260730_phase8_email_automation.sql`, `20260730_phase9_shop_switcher.sql`, `20260730_p0_security_hardening.sql`, `20260730_p1_integrity_hardening.sql`, and `20260730_p2_audit_hardening.sql`.
-4. `npm run seed` — restores both regional service catalogs and all ten demo jobs, with the US shop active by default. Pass `ph` or `us` to choose a different active shop.
-5. `npm run dev` — http://localhost:3000
+3. Install the Supabase CLI and run `supabase start`. The CLI applies the uniquely versioned files in `supabase/migrations/`; do not apply them manually through the production SQL editor.
+4. Add `auto_repair` to Supabase **Project Settings → Data API → Exposed schemas**. If the project already has a manual `pgrst.db_schemas` role override, append `auto_repair` without removing its existing schemas and reload the PostgREST config.
+5. `npm run seed` — restores both regional service catalogs and all ten demo jobs, with the US shop active by default. Pass `ph` or `us` to choose a different active shop.
+6. `npm run dev` — http://localhost:3000
+
+## Database migrations
+
+Migration filenames use unique 14-digit versions and are applied in timestamp order by the Supabase CLI. `npm run verify:migrations` rejects duplicate or malformed versions. `npm run verify:migrations:clean` destroys only the local disposable database and reapplies every migration from scratch. The same clean reset runs in `.github/workflows/migration-check.yml`.
+
+The production project predates migration tracking: its historical SQL was applied manually and its migration-history table was confirmed absent on 2026-07-31. Follow [supabase/BASELINE.md](supabase/BASELINE.md) for the one-time verified `migration repair` baseline and the subsequent normal `db push`. Do not rerun the historical migration set against that live database.
 
 ## Environment variables
 | Var | Where used | Notes |
@@ -61,6 +68,6 @@ Current production URL: https://auto-repair-ten.vercel.app
 The public tracker accepts plate number plus phone through a rate-limited server endpoint. Booking, triage, and administrator login also enforce endpoint-specific database quotas and bounded request bodies. Anonymous Supabase users can read shop/service catalogs only; customer jobs, histories, messages, email deliveries, and rate-limit attempts are private.
 
 ## Testing
-`npm test` runs `tests/*.test.ts` against the live Supabase + OpenRouter config in `.env.local`. Email fault tests cover lost responses, ambiguous `reconciling` outcomes, callback replay, and late callbacks while reusing one delivery identity. Real-provider and n8n activation checks remain a separate live-QA step.
+`npm test` runs `tests/*.test.ts` against the live Supabase + OpenRouter config in `.env.local`. `npm run verify:migrations:clean` uses the local Supabase stack to prove every migration applies to an empty database. Email fault tests cover lost responses, ambiguous `reconciling` outcomes, callback replay, and late callbacks while reusing one delivery identity. Real-provider and n8n activation checks remain a separate live-QA step.
 
 See `RELEASE-v2.md` for the immutable V2 lineage and rollback rules.

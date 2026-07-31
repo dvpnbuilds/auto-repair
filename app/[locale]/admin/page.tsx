@@ -4,6 +4,7 @@ import {getActiveShop} from "@/lib/shop-config";
 import {supabaseService} from "@/lib/supabase/server";
 import AdminBoard, {type Message} from "./AdminBoard";
 import PasscodeForm from "./PasscodeForm";
+import {LockIcon} from "../components/Icons";
 
 export default async function AdminPage() {
   const t = await getTranslations("Admin");
@@ -11,9 +12,18 @@ export default async function AdminPage() {
 
   if (!authed) {
     return (
-      <div className="px-6 py-12 max-w-sm">
-        <h1 className="text-2xl font-semibold mb-4">{t("loginTitle")}</h1>
-        <PasscodeForm />
+      <div className="page-shell">
+        <div className="surface mx-auto max-w-md p-6 sm:p-8">
+          <span className="grid size-12 place-items-center rounded-2xl bg-[#dff2ee] text-[#087f78]">
+            <LockIcon className="size-5" />
+          </span>
+          <p className="eyebrow mt-6">{t("loginEyebrow")}</p>
+          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#173744]">
+            {t("loginTitle")}
+          </h1>
+          <p className="mb-7 mt-3 text-sm leading-6 text-[#60727a]">{t("loginHint")}</p>
+          <PasscodeForm />
+        </div>
       </div>
     );
   }
@@ -24,7 +34,7 @@ export default async function AdminPage() {
     .select("shop_key, name, country, currency, is_active")
     .order("shop_key", {ascending: false});
   if (shopsError) {
-    return <div className="px-6 py-12">{t("shopsLoadError")}</div>;
+    return <div className="page-shell status-message">{t("shopsLoadError")}</div>;
   }
   const {data: jobs, error: jobsError} = await supabaseService
     .from("autoshop_jobs")
@@ -33,7 +43,7 @@ export default async function AdminPage() {
     .order("created_at", {ascending: false});
 
   if (jobsError) {
-    return <div className="px-6 py-12">{t("jobsLoadError")}</div>;
+    return <div className="page-shell status-message">{t("jobsLoadError")}</div>;
   }
 
   const jobIds = (jobs ?? []).map((job) => job.id);
@@ -57,7 +67,7 @@ export default async function AdminPage() {
       .select("message_id, status")
       .in("message_id", messageIds);
     if (deliveryError) {
-      return <div className="px-6 py-12">{t("messagesLoadError")}</div>;
+      return <div className="page-shell status-message">{t("messagesLoadError")}</div>;
     }
     const statusByMessage = new Map(
       (deliveries ?? []).map((delivery) => [delivery.message_id, delivery.status])
@@ -69,14 +79,16 @@ export default async function AdminPage() {
   }
 
   if (messagesError) {
-    return <div className="px-6 py-12">{t("messagesLoadError")}</div>;
+    return <div className="page-shell status-message">{t("messagesLoadError")}</div>;
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 sm:py-12">
-      <h1 className="text-2xl font-semibold mb-6">
-        {t("boardTitle", {shopName: shop.name})}
-      </h1>
+    <div className="page-shell-wide">
+      <header className="mb-8">
+        <p className="eyebrow">{t("boardEyebrow")}</p>
+        <h1 className="page-title-compact">{t("boardTitle", {shopName: shop.name})}</h1>
+        <p className="page-lede">{t("boardHint")}</p>
+      </header>
       <AdminBoard
         jobs={jobs ?? []}
         messages={messages}

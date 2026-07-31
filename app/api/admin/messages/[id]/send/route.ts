@@ -1,10 +1,14 @@
 import {NextResponse} from "next/server";
 import {isAdminAuthedFromHeader} from "@/lib/admin/auth";
+import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {createEmailPayload} from "@/lib/email/payload";
 import {sendEmail} from "@/lib/email/send";
 import type {EmailDelivery} from "@/lib/email/types";
 import {getActiveShop} from "@/lib/shop-config";
 import {supabaseService} from "@/lib/supabase/server";
+
+const MAX_SEND_BODY_BYTES = 16 * 1024;
+const MAX_MESSAGE_BODY_LENGTH = 10_000;
 
 export async function POST(
   request: Request,
@@ -15,8 +19,29 @@ export async function POST(
   }
 
   const {id} = await params;
-  const body = await request.json().catch(() => null);
-  const editedBody = typeof body?.body === "string" ? body.body.trim() : null;
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, MAX_SEND_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({error: error.message}, {status: error.status});
+    }
+    return NextResponse.json({error: "Invalid request body"}, {status: 400});
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({error: "Invalid request body"}, {status: 400});
+  }
+  const bodyValue = (body as Record<string, unknown>).body;
+  if (
+    bodyValue !== undefined &&
+    (typeof bodyValue !== "string" ||
+      bodyValue.length > MAX_MESSAGE_BODY_LENGTH)
+  ) {
+    return NextResponse.json({error: "Invalid message body"}, {status: 400});
+  }
+  const editedBody =
+    typeof bodyValue === "string" ? bodyValue.trim() : null;
 
   const {data: message, error: messageError} = await supabaseService
     .from("autoshop_messages")

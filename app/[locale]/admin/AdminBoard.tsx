@@ -39,6 +39,29 @@ const DRAFT_KINDS: MessageKind[] = [
   "review_request",
 ];
 
+const STATUS_STYLES: Record<JobStatus, {dot: string; badge: string}> = {
+  booked: {
+    dot: "bg-[#4b8ed7]",
+    badge: "bg-[#eaf2fb] text-[#326ba6]",
+  },
+  in_progress: {
+    dot: "bg-[#087f78]",
+    badge: "bg-[#dff2ee] text-[#06665f]",
+  },
+  waiting_parts: {
+    dot: "bg-[#d39045]",
+    badge: "bg-[#fbf0df] text-[#8a5b24]",
+  },
+  ready: {
+    dot: "bg-[#7b70c9]",
+    badge: "bg-[#efedfb] text-[#5d52ac]",
+  },
+  done: {
+    dot: "bg-[#55a06a]",
+    badge: "bg-[#e8f5eb] text-[#367747]",
+  },
+};
+
 export default function AdminBoard({
   jobs: initialJobs,
   messages: initialMessages,
@@ -181,16 +204,16 @@ export default function AdminBoard({
     <div>
       <section
         aria-labelledby="demo-market-title"
-        className="mb-8 grid gap-5 rounded-2xl bg-zinc-950 p-5 text-white shadow-sm sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end"
+        className="surface mb-8 grid gap-6 overflow-hidden p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end"
       >
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#087f78]">
             {t("activeShop")}
           </p>
-          <h2 id="demo-market-title" className="text-xl font-semibold tracking-tight">
+          <h2 id="demo-market-title" className="text-xl font-bold tracking-[-0.025em] text-[#173744]">
             {t("demoMarket")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60727a]">
             {t("demoMarketHint")}
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2" aria-label={t("shopOptions")}>
@@ -204,17 +227,22 @@ export default function AdminBoard({
                   aria-pressed={selected}
                   onClick={() => switchShop(shop.shop_key)}
                   disabled={selected || busy !== null}
-                  className={`min-h-20 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-default ${
+                  className={`min-h-20 rounded-xl border px-4 py-3 text-left transition disabled:cursor-default ${
                     selected
-                      ? "border-amber-300 bg-amber-300 text-zinc-950"
-                      : "border-white/15 bg-white/[0.04] text-white hover:border-white/35 hover:bg-white/[0.08] disabled:opacity-55"
+                      ? "border-[#8ac4ba] bg-[#dff2ee] text-[#173744] shadow-[inset_0_0_0_1px_rgba(8,127,120,0.08)]"
+                      : "border-[#dce5e3] bg-[#fbfdfc] text-[#29434d] hover:border-[#a8cec7] hover:bg-[#f3f9f7] disabled:opacity-55"
                   }`}
                 >
-                  <span className="block text-sm font-semibold">{shop.name}</span>
+                  <span className="flex items-center gap-2 text-sm font-bold">
+                    <span
+                      className={`size-2 rounded-full ${
+                        selected ? "bg-[#087f78]" : "bg-[#b7c5c2]"
+                      }`}
+                    />
+                    {shop.name}
+                  </span>
                   <span
-                    className={`mt-1 block text-xs ${
-                      selected ? "text-zinc-700" : "text-zinc-400"
-                    }`}
+                    className="mt-1 block pl-4 text-xs text-[#60727a]"
                   >
                     {switching
                       ? t("switching")
@@ -228,15 +256,15 @@ export default function AdminBoard({
             })}
           </div>
         </div>
-        <div className="border-t border-white/10 pt-5 lg:max-w-xs lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-          <p className="mb-3 text-sm leading-6 text-zinc-400">
+        <div className="rounded-xl bg-[#f5f1e9] p-4">
+          <p className="mb-3 text-sm leading-6 text-[#6f6251]">
             {t("resetHint")}
           </p>
           <button
             type="button"
             onClick={resetDemoData}
             disabled={busy !== null}
-            className="min-h-11 w-full rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:opacity-50 lg:w-auto"
+            className="button-secondary w-full !border-[#dacbb8] !bg-white/70 !text-[#6f5333] hover:!bg-white"
           >
             {busy === "reset" ? t("resetting") : t("reset")}
           </button>
@@ -246,11 +274,17 @@ export default function AdminBoard({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {STATUS_ORDER.map((status) => (
           <section key={status} className="flex min-w-0 flex-col gap-3">
-            <h2 className="text-sm font-semibold text-zinc-600">
-              {statusLabel(status)}
-            </h2>
+            <div className="flex items-center justify-between rounded-xl border border-[#dce5e3] bg-white/70 px-3 py-2.5">
+              <h2 className="flex items-center gap-2 text-sm font-bold text-[#29434d]">
+                <span className={`size-2 rounded-full ${STATUS_STYLES[status].dot}`} />
+                {statusLabel(status)}
+              </h2>
+              <span className="grid min-w-6 place-items-center rounded-md bg-[#edf2f1] px-1.5 py-0.5 text-xs font-bold text-[#60727a]">
+                {jobs.filter((job) => job.status === status).length}
+              </span>
+            </div>
             {jobs.filter((job) => job.status === status).length === 0 && (
-              <p className="rounded-xl border border-dashed border-black/10 px-3 py-6 text-center text-xs text-zinc-400">
+              <p className="rounded-xl border border-dashed border-[#cfdcda] bg-white/35 px-3 py-8 text-center text-xs text-[#829196]">
                 {t("noJobs")}
               </p>
             )}
@@ -262,21 +296,28 @@ export default function AdminBoard({
                 return (
                   <div
                     key={job.id}
-                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-black/10 bg-white p-4 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                    className="flex min-w-0 flex-col gap-3 rounded-xl border border-[#dce5e3] bg-white p-4 text-sm shadow-[0_7px_20px_rgba(28,63,72,0.05)]"
                   >
-                    <div className="font-medium">{job.customer_name}</div>
-                    <div className="break-words text-zinc-600">
-                      {job.vehicle} — {job.plate_number}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-bold text-[#173744]">{job.customer_name}</div>
+                      <span className={`rounded-md px-2 py-1 text-[0.65rem] font-bold ${STATUS_STYLES[status].badge}`}>
+                        {statusLabel(status)}
+                      </span>
+                    </div>
+                    <div className="break-words text-[#60727a]">
+                      {job.vehicle} · {job.plate_number}
                     </div>
                     {job.probable_issue && (
-                      <div className="text-zinc-600">{job.probable_issue}</div>
+                      <div className="rounded-lg bg-[#f4f7f6] px-3 py-2 text-xs leading-5 text-[#52676f]">
+                        {job.probable_issue}
+                      </div>
                     )}
 
                     {next && (
                       <button
                         onClick={() => advance(job)}
                         disabled={busy === job.id}
-                        className="min-h-9 w-fit rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
+                        className="button-primary !min-h-9 w-full !px-3 !py-1.5 !text-xs"
                       >
                         {busy === job.id
                           ? t("moving")
@@ -290,7 +331,7 @@ export default function AdminBoard({
                           key={kind}
                           onClick={() => generateDraft(job.id, kind)}
                           disabled={busy === `${job.id}:${kind}`}
-                          className="min-h-9 rounded-lg border border-black/20 px-3 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
+                          className="min-h-9 rounded-lg border border-[#cbd9d6] bg-white px-3 py-1.5 text-xs font-semibold text-[#52676f] hover:border-[#93bbb4] hover:bg-[#edf5f3] disabled:opacity-50"
                         >
                           {busy === `${job.id}:${kind}`
                             ? t("drafting")
@@ -300,10 +341,10 @@ export default function AdminBoard({
                     </div>
 
                     {jobMessages.length > 0 && (
-                      <div className="flex flex-col gap-2 mt-1">
+                      <div className="mt-1 flex flex-col gap-2 rounded-xl bg-[#f8faf9] p-3">
                         {jobMessages.map((message) => (
-                          <div key={message.id} className="border-t border-black/10 pt-3">
-                            <div className="text-xs text-zinc-600 mb-1">
+                          <div key={message.id} className="border-t border-[#e0e8e6] pt-3 first:border-t-0 first:pt-0">
+                            <div className="mb-2 text-[0.68rem] font-bold uppercase tracking-[0.06em] text-[#718187]">
                               {t("messageState", {
                                 kind: kindLabel(message.kind),
                                 state: message.sent
@@ -328,14 +369,14 @@ export default function AdminBoard({
                                   [message.id]: event.target.value,
                                 }))
                               }
-                              className="w-full rounded-lg border border-black/20 px-3 py-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:bg-black/5"
+                              className="field-control !min-h-20 !px-3 !py-2 !text-xs disabled:!bg-[#edf1f0]"
                               rows={3}
                             />
                             {!message.sent && !message.delivery_status && (
                               <button
                                 onClick={() => sendMessage(message)}
                                 disabled={busy === `send:${message.id}`}
-                                className="mt-2 min-h-9 rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-50"
+                                className="button-primary mt-2 !min-h-9 !px-3 !py-1.5 !text-xs"
                               >
                                 {busy === `send:${message.id}` ? t("sending") : t("send")}
                               </button>

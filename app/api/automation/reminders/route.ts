@@ -1,6 +1,10 @@
 import {NextResponse} from "next/server";
 import {createEmailPayload} from "@/lib/email/payload";
 import {reconcileEmailDeliveries} from "@/lib/email/reconcile";
+import {
+  ACTIVE_REMINDER_DELIVERY_STATUSES,
+  planReminderJobs,
+} from "@/lib/email/reminder-plan";
 import {sendEmail} from "@/lib/email/send";
 import {draftMessage} from "@/lib/openrouter/messages";
 import {getActiveShop} from "@/lib/shop-config";
@@ -38,17 +42,15 @@ export async function POST(request: Request) {
   const {data: existing} = jobIds.length
     ? await supabaseService
         .from("autoshop_email_deliveries")
-        .select("job_id")
+        .select("job_id, status")
         .in("job_id", jobIds)
         .eq("template_id", "reminder")
-        .in("status", ["pending", "sent"])
+        .in("status", [...ACTIVE_REMINDER_DELIVERY_STATUSES])
     : {data: []};
-  const alreadyQueued = new Set((existing ?? []).map((delivery) => delivery.job_id));
+  const jobsToProcess = planReminderJobs(jobs ?? [], existing ?? []);
   const results: Array<{jobId: string; status: string}> = [];
 
-  for (const job of jobs ?? []) {
-    if (alreadyQueued.has(job.id)) continue;
-
+  for (const job of jobsToProcess) {
     try {
       const messageBody = await draftMessage("reminder", job);
       const {data: message, error: messageError} = await supabaseService

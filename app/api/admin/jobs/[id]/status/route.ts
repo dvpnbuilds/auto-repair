@@ -1,5 +1,6 @@
 import {NextResponse} from "next/server";
 import {isAdminAuthedFromHeader} from "@/lib/admin/auth";
+import {readBoundedJson, RequestBodyError} from "@/lib/api/request";
 import {createEmailPayload} from "@/lib/email/payload";
 import {
   prepareEmailReservation,
@@ -20,6 +21,8 @@ type TransitionResult = {
   delivery?: EmailDelivery;
 };
 
+const MAX_STATUS_BODY_BYTES = 512;
+
 export async function POST(
   request: Request,
   {params}: {params: Promise<{id: string}>}
@@ -29,9 +32,22 @@ export async function POST(
   }
 
   const {id} = await params;
-  const body = await request.json().catch(() => null);
-  const status = body?.status;
-  const expectedStatus = body?.expectedStatus;
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, MAX_STATUS_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({error: error.message}, {status: error.status});
+    }
+    return NextResponse.json({error: "Invalid request body"}, {status: 400});
+  }
+
+  const input =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>)
+      : {};
+  const status = input.status;
+  const expectedStatus = input.expectedStatus;
   if (!isJobStatus(status) || !isJobStatus(expectedStatus)) {
     return NextResponse.json({error: "Invalid status transition"}, {status: 400});
   }

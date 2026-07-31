@@ -17,7 +17,7 @@ release harder to verify and could disrupt existing clones.
 
 The consolidated V2 checkpoint is still auditable by phase:
 
-- Phase 6: `supabase/migrations/20260730_phase6_shop_config.sql`,
+- Phase 6: `supabase/migrations/20260730090000_phase6_shop_config.sql`,
   `lib/shop-config.ts`, `lib/formatting.ts`.
 - Phase 7: `i18n/`, `messages/`, localized routes under `app/[locale]/`.
 - Phase 8: `lib/email/`, `app/api/webhooks/n8n/`, `app/api/automation/`,

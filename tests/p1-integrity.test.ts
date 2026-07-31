@@ -27,7 +27,7 @@ test("booking is one server-authoritative transaction", async () => {
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p1_integrity_hardening.sql"
+    "20260730130000_p1_integrity_hardening.sql"
   );
   const bookingFunction = migration.slice(
     migration.indexOf("create or replace function create_autoshop_booking"),
@@ -75,7 +75,7 @@ test("status transition, history, message, and outbox are atomic and replay-safe
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p1_integrity_hardening.sql"
+    "20260730130000_p1_integrity_hardening.sql"
   );
   const transitionFunction = migration.slice(
     migration.indexOf("create or replace function transition_autoshop_job"),
@@ -104,7 +104,7 @@ test("ambiguous email outcomes reconcile under the same provider identity", asyn
   const migration = await source(
     "supabase",
     "migrations",
-    "20260730_p1_integrity_hardening.sql"
+    "20260730130000_p1_integrity_hardening.sql"
   );
   const workflow = JSON.parse(
     await source(

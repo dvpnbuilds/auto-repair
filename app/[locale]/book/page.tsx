@@ -18,7 +18,7 @@ export default async function BookPage({
     .order("category");
 
   if (error) {
-    return <div className="px-6 py-12">{t("loadError")}</div>;
+    return <div className="page-shell status-message">{t("loadError")}</div>;
   }
 
   const first = (value: string | string[] | undefined) =>
@@ -32,8 +32,12 @@ export default async function BookPage({
   };
 
   return (
-    <div className="px-6 py-12 max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-6">{t("title")}</h1>
+    <div className="page-shell">
+      <header className="mb-10 max-w-3xl">
+        <p className="eyebrow">{t("eyebrow")}</p>
+        <h1 className="page-title-compact">{t("title")}</h1>
+        <p className="page-lede">{t("intro")}</p>
+      </header>
       <BookingForm services={services ?? []} prefill={prefill} shop={shop} />
     </div>
   );

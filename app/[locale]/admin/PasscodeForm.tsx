@@ -33,21 +33,23 @@ export default function PasscodeForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <label className="text-sm flex flex-col gap-1">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <label className="field-label">
         {t("passcode")}
         <input
+          required
           type="password"
+          autoComplete="current-password"
           value={passcode}
           onChange={(event) => setPasscode(event.target.value)}
-          className="border border-black/20 rounded px-3 py-2"
+          className="field-control"
         />
       </label>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="status-message">{error}</p>}
       <button
         type="submit"
         disabled={submitting}
-        className="bg-black text-white rounded px-4 py-2 text-sm w-fit disabled:opacity-50"
+        className="button-primary w-full"
       >
         {submitting ? t("checking") : t("logIn")}
       </button>

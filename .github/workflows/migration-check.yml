@@ -1,0 +1,31 @@
+name: Migration check
+
+on:
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "scripts/verify-migrations.mjs"
+      - ".github/workflows/migration-check.yml"
+  workflow_dispatch:
+
+jobs:
+  clean-database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Verify migration filenames
+        run: npm run verify:migrations
+      - name: Apply every migration to a clean database
+        run: |
+          supabase db start
+          supabase db reset --local
+      - name: Verify transactional database behavior
+        run: npm run verify:database-behavior

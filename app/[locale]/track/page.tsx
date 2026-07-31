@@ -7,9 +7,12 @@ export default async function TrackPage() {
   const shop = await getActiveShop();
 
   return (
-    <div className="px-6 py-12 max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-2">{t("title")}</h1>
-      <p className="text-sm text-zinc-600 mb-6">{t("intro")}</p>
+    <div className="page-shell">
+      <header className="mb-10 max-w-3xl">
+        <p className="eyebrow">{t("eyebrow")}</p>
+        <h1 className="page-title-compact">{t("title")}</h1>
+        <p className="page-lede">{t("intro")}</p>
+      </header>
       <TrackerLookup
         regional={{
           locale: shop.locale,
